@@ -45,6 +45,7 @@ public class Executor {
 
         try {
             System.out.println("Writing...");
+
             BufferedWriter writer = new BufferedWriter(new FileWriter(new File(Path.of(path + (saveToCopy ? "_output" : "")).toUri())));
             for (String line : lines) {
                 writer.write(line);
@@ -65,9 +66,12 @@ public class Executor {
 
     private static void prepareData(Path path) {
         System.out.println("Preparing data...");
+
         File sourceFile = new File(path.toUri());
         long capacity = (long) (sourceFile.length() * 1.1);
+
         System.out.println("Builder capacity: " + capacity);
+
         if (capacity > Integer.MAX_VALUE) {
             JOptionPane.showMessageDialog(null, "Source file is too large to process.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
@@ -109,20 +113,30 @@ public class Executor {
 
     static void removeUselessDecompilerComments() {
         System.out.print("Removing compilator comments...    ");
+
         for (String line : lines) {
             ProgressTracker.progress();
+            if (line.isEmpty()) {
+                appendEmpty();
+                continue;
+            }
             if (line.contains("// DISPLAY WARNING: Type casts") || line.contains("// WARNING: Subroutine does not return")) continue;
-            resultBuilder.append(line).append(System.lineSeparator());
+            appendWithNewLine(line);
         }
     }
 
     static void removeNullPointerTypeCasts() {
         System.out.print("Removing null pointer type casts...    ");
+
         Matcher matcher = Pattern.compile("(\\([^(]*\\)0x?0?)").matcher("");
         for (String line : lines) {
             ProgressTracker.progress();
+            if (line.isEmpty()) {
+                appendEmpty();
+                continue;
+            }
             matcher.reset(line);
-            resultBuilder.append(matcher.replaceAll("NULL")).append(System.lineSeparator());
+            appendWithNewLine(matcher.replaceAll("NULL"));
         }
     }
 
@@ -157,42 +171,39 @@ public class Executor {
                 if (header != null) {
                     matcher.reset(line);
                     if (!matcher.find()) {
-                        resultBuilder.append(header).append(System.lineSeparator());
+                        appendWithNewLine(header);
                         inBlock = false;
 
                         //the entire "out-of-block" code segment copy-pasted for very rare cases :(
                         if (line.isEmpty()) {
-                            resultBuilder.append(line).append(System.lineSeparator());
+                            appendEmpty();
                             continue;
                         }
                         //method end
                         if (line.charAt(0) == '}') {
                             currentVariables.clear();
-                            resultBuilder.append(line).append(System.lineSeparator());
+                            appendWithNewLine(line);
                             continue;
                         }
                         //checking if current line is a header of a null check if block
                         if (line.charAt(line.length() - 1) == '{') {
-                            pos = 0;
                             //skip indentation
-                            while (pos != line.length() && line.charAt(pos) == ' ') pos++;
+                            pos = skipWhile(line, 0, ' ');
                             indentationPos = pos;
 
-                            //check 'if (' segment
-                            if (line.charAt(pos++) != 'i' || line.charAt(pos++) != 'f' || line.charAt(pos++) != ' ' || line.charAt(pos++) != '(') {
-                                resultBuilder.append(line).append(System.lineSeparator());
+                            if (!textAfterEquals(line, pos, "if (")) {
+                                appendWithNewLine(line);
                                 continue;
                             }
+                            pos += 4;
 
                             //getting variable name
-                            while (line.charAt(pos) != ' ' && line.charAt(pos) != ')') pos++;
+                            pos = skipUntil(line, pos, ' ', ')');
                             variablePos = pos;
 
                             //check the rest of the header
                             pos++;
-                            if (line.charAt(pos++) != '=' || line.charAt(pos++) != '=' || line.charAt(pos++) != ' ' || line.charAt(pos++) != '\''
-                                    || line.charAt(pos++) != '\\' || line.charAt(pos++) != '0' || line.charAt(pos++) != '\'' || line.charAt(pos++) != ')'
-                                    || line.charAt(pos++) != ' ' || line.charAt(pos) != '{') {
+                            if (!textAfterEquals(line, pos, "== '\\0') {")) {
 
                                 //Not an inlined check, try to match with found variables
                                 variableName = line.substring(indentationPos + 4, variablePos);
@@ -206,7 +217,7 @@ public class Executor {
                                         continue loop;
                                     }
                                 }
-                                resultBuilder.append(line).append(System.lineSeparator());
+                                appendWithNewLine(line);
                                 continue;
                             }
                             //start removing the if block
@@ -219,30 +230,24 @@ public class Executor {
                             //bVar10 = DAT_18340b0bf == '\0';
                             //check for un-inlined variable initialization
                             pos = line.length() - 1;
-                            if (line.charAt(pos--) == ';' && line.charAt(pos--) == '\'' && line.charAt(pos--) == '0' && line.charAt(pos--) == '\\'
-                                    && line.charAt(pos--) == '\'' && line.charAt(pos--) == ' ' && line.charAt(pos--) == '=' && line.charAt(pos) == '=') {
-
-                                pos -= 12;
-
-                                if (line.charAt(pos--) == 'T' && line.charAt(pos--) == 'A' && line.charAt(pos--) == 'D' && line.charAt(pos--) == ' '
-                                        && line.charAt(pos--) == '=' && line.charAt(pos) == ' ') {
-
-                                    sanityPos = pos;
-                                    pos = 0;
+                            if (textBeforeEquals(line, pos, "== '\\0';")) {
+                                pos -= 19;
+                                if (textBeforeEquals(line, pos, " = DAT")) {
+                                    sanityPos = pos - 5;
 
                                     //skip indentation
-                                    while (pos != line.length() && line.charAt(pos) == ' ') pos++;
+                                    pos = skipWhile(line, 0, ' ');
                                     indentationPos = pos;
 
                                     //getting variable name
-                                    while (line.charAt(pos) != ' ') pos++;
+                                    pos = skipUntil(line, pos, ' ');
                                     if (pos == sanityPos)
                                         currentVariables.add(line.substring(indentationPos, pos));
                                     continue;
                                 }
                             }
                         }
-                        resultBuilder.append(line).append(System.lineSeparator());
+                        appendWithNewLine(line);
                     }
                     else header = null;
                 }
@@ -250,37 +255,35 @@ public class Executor {
             }
             else {
                 if (line.isEmpty()) {
-                    resultBuilder.append(line).append(System.lineSeparator());
+                    appendEmpty();
                     continue;
                 }
                 //method end
                 if (line.charAt(0) == '}') {
                     currentVariables.clear();
-                    resultBuilder.append(line).append(System.lineSeparator());
+                    appendWithNewLine(line);
                     continue;
                 }
                 //checking if current line is a header of a null check if block
                 if (line.charAt(line.length() - 1) == '{') {
-                    pos = 0;
                     //skip indentation
-                    while (pos != line.length() && line.charAt(pos) == ' ') pos++;
+                    pos = skipWhile(line, 0, ' ');
                     indentationPos = pos;
 
                     //check 'if (' segment
-                    if (line.charAt(pos++) != 'i' || line.charAt(pos++) != 'f' || line.charAt(pos++) != ' ' || line.charAt(pos++) != '(') {
-                        resultBuilder.append(line).append(System.lineSeparator());
+                    if (!textAfterEquals(line, pos, "if (")) {
+                        appendWithNewLine(line);
                         continue;
                     }
+                    pos += 4;
 
                     //getting variable name
-                    while (line.charAt(pos) != ' ' && line.charAt(pos) != ')') pos++;
+                    pos = skipUntil(line, pos, ' ', ')');
                     variablePos = pos;
 
                     //check the rest of the header
                     pos++;
-                    if (line.charAt(pos++) != '=' || line.charAt(pos++) != '=' || line.charAt(pos++) != ' ' || line.charAt(pos++) != '\''
-                        || line.charAt(pos++) != '\\' || line.charAt(pos++) != '0' || line.charAt(pos++) != '\'' || line.charAt(pos++) != ')'
-                        || line.charAt(pos++) != ' ' || line.charAt(pos) != '{') {
+                    if (!textAfterEquals(line, pos, "== '\\0') {")) {
 
                         //Not an inlined check, try to match with found variables
                         variableName = line.substring(indentationPos + 4, variablePos);
@@ -294,7 +297,7 @@ public class Executor {
                                 continue loop;
                             }
                         }
-                        resultBuilder.append(line).append(System.lineSeparator());
+                        appendWithNewLine(line);
                         continue;
                     }
                     //start removing the if block
@@ -307,30 +310,24 @@ public class Executor {
                     //bVar10 = DAT_18340b0bf == '\0';
                     //check for un-inlined variable initialization
                     pos = line.length() - 1;
-                    if (line.charAt(pos--) == ';' && line.charAt(pos--) == '\'' && line.charAt(pos--) == '0' && line.charAt(pos--) == '\\'
-                        && line.charAt(pos--) == '\'' && line.charAt(pos--) == ' ' && line.charAt(pos--) == '=' && line.charAt(pos) == '=') {
-
-                        pos -= 12;
-
-                        if (line.charAt(pos--) == 'T' && line.charAt(pos--) == 'A' && line.charAt(pos--) == 'D' && line.charAt(pos--) == ' '
-                            && line.charAt(pos--) == '=' && line.charAt(pos) == ' ') {
-
-                            sanityPos = pos;
-                            pos = 0;
+                    if (pos > 25 && textBeforeEquals(line, pos, "== '\\0';")) {
+                        pos -= 19;
+                        if (textBeforeEquals(line, pos, " = DAT")) {
+                            sanityPos = pos - 5;
 
                             //skip indentation
-                            while (pos != line.length() && line.charAt(pos) == ' ') pos++;
+                            pos = skipWhile(line, 0, ' ');
                             indentationPos = pos;
 
                             //getting variable name
-                            while (line.charAt(pos) != ' ') pos++;
+                            pos = skipUntil(line, pos, ' ');
                             if (pos == sanityPos)
                                 currentVariables.add(line.substring(indentationPos, pos));
                             continue;
                         }
                     }
                 }
-                resultBuilder.append(line).append(System.lineSeparator());
+                appendWithNewLine(line);
             }
         }
     }
@@ -347,7 +344,7 @@ public class Executor {
             ProgressTracker.progress();
 
             if (lines[i].isEmpty()) {
-                resultBuilder.append(lines[i - 1]).append(System.lineSeparator());
+                appendWithNewLine(lines[i - 1]);
                 i++;
                 continue;
             }
@@ -360,16 +357,17 @@ public class Executor {
                     i += 3;
                 }
             }
-            resultBuilder.append(lines[i - 1]).append(System.lineSeparator());
+            appendWithNewLine(lines[i - 1]);
             i++;
         }
-        resultBuilder.append(lines[i - 1]).append(System.lineSeparator());
+        appendWithNewLine(lines[i - 1]);
         ProgressTracker.end();
     }
 
     static void simplifyProcedureInterruptions() {
-        // REPLACING INTERRUPTION FUNCTION WITH 'return' //
         System.out.print("Simplifying procedure interruptions (step 1)...    ");
+
+        // REPLACING INTERRUPTION FUNCTION WITH 'return' //
         String interruptionFunction = JOptionPane.showInputDialog(null,
                 """
                         Enter the name of a targeted procedure interruption function.
@@ -384,16 +382,21 @@ public class Executor {
         }
         for (String line : lines) {
             ProgressTracker.progress();
-            if (line.contains(interruptionFunction)) {
-                resultBuilder.append(line.replaceAll(interruptionFunction + "\\(.*?\\);$", "return;")).append(System.lineSeparator());
+            if (line.isEmpty()) {
+                appendEmpty();
+                continue;
             }
-            else resultBuilder.append(line).append(System.lineSeparator());
+            if (line.contains(interruptionFunction)) {
+                appendWithNewLine(line.replaceAll(interruptionFunction + "\\(.*?\\);$", "return;"));
+            }
+            else appendWithNewLine(line);
         }
         resetLineArray();
         ProgressTracker.reset();
 
-        // INTERRUPTION LABEL PROCESSING //
         System.out.print("Simplifying procedure interruptions (step 2)...    ");
+
+        // INTERRUPTION LABEL PROCESSING //
         boolean inBlock = false;
         boolean checkLabel = false;
         int pos;
@@ -413,12 +416,10 @@ public class Executor {
 
                 //check if label points to a return statement
                 if (checkLabel) {
-                    pos = 0;
-                    while (pos != line.length() && line.charAt(pos) == ' ') pos++;
+                    pos = skipWhile(line, 0, ' ');
                     indentationPos = pos;
 
-                    if (line.charAt(pos++) == 'r' && line.charAt(pos++) == 'e' && line.charAt(pos++) == 't' && line.charAt(pos++) == 'u'
-                            && line.charAt(pos++) == 'r' && line.charAt(pos) == 'n') {
+                    if (textAfterEquals(line, pos, "return")) {
                         exitLabels.put(label, line.substring(indentationPos));
                         methodLines.removeLast();
                     }
@@ -433,11 +434,11 @@ public class Executor {
                     for (int i = methodLines.size() - 1; i >= 0; i--) {
                         String methodLine = methodLines.get(i);
                         if (methodLine.isEmpty() || methodLine.charAt(0) != ' ') continue;
-                        pos = 0;
-                        while (pos != methodLine.length() && methodLine.charAt(pos) == ' ') pos++;
+
+                        pos = skipWhile(methodLine, 0, ' ');
                         if (pos == methodLine.length() || methodLine.charAt(pos) == '}') continue;
-                        if (methodLine.charAt(pos++) == 'r' && methodLine.charAt(pos++) == 'e' && methodLine.charAt(pos++) == 't' && methodLine.charAt(pos++) == 'u'
-                                && methodLine.charAt(pos++) == 'r' && methodLine.charAt(pos++) == 'n' && methodLine.charAt(pos) == ';') {
+
+                        if (textAfterEquals(methodLine, pos, "return;")) {
                             methodLines.remove(i);
                         }
                         else break;
@@ -445,29 +446,30 @@ public class Executor {
                     //goto statement replacement
                     for (String methodLine : methodLines) {
                         if (methodLine.isEmpty()) {
-                            resultBuilder.append(System.lineSeparator());
+                            appendEmpty();
                             continue;
                         }
                         if (methodLine.charAt(0) != ' ') {
-                            resultBuilder.append(methodLine).append(System.lineSeparator());
+                            appendWithNewLine(methodLine);
                             continue;
                         }
                         pos = methodLine.indexOf("goto");
                         if (pos != -1 && methodLine.length() >= pos + 17 && methodLine.charAt(pos + 5) == 'L') {
                             label = methodLine.substring(pos + 5, pos + 18);
                             if (exitLabels.containsKey(label)) {
-                                resultBuilder.append(methodLine, 0, pos).append(exitLabels.get(label)).append(System.lineSeparator());
+                                append(methodLine.substring(0, pos));
+                                appendWithNewLine(exitLabels.get(label));
                                 continue;
                             }
                         }
-                        resultBuilder.append(methodLine).append(System.lineSeparator());
+                        appendWithNewLine(methodLine);
                     }
                     methodLines.clear();
-                    resultBuilder.append(line).append(System.lineSeparator());
+                    appendWithNewLine(line);
                     continue;
                 }
                 //label
-                if (line.charAt(0) == 'L' && line.charAt(1) == 'A' && line.charAt(2) == 'B' && line.charAt(3) == '_') {
+                if (line.startsWith("LAB_")) {
                     checkLabel = true;
                     label = line.substring(0, 13);
                 }
@@ -475,16 +477,14 @@ public class Executor {
             }
             else {
                 if (line.isEmpty()) {
-                    resultBuilder.append(System.lineSeparator());
+                    appendEmpty();
                     continue;
                 }
                 //check if current line is a function header
-                if ((line.charAt(0) != ' ' || line.charAt(0) != '/' || line.charAt(0) != '}'
-                        || (line.charAt(0) != 'L' && line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'))
-                        && line.charAt(line.length() - 1) == '{') {
+                if (isFunctionHeader(line)) {
                     inBlock = true;
                 }
-                resultBuilder.append(line).append(System.lineSeparator());
+                appendWithNewLine(line);
             }
         }
     }
@@ -492,6 +492,7 @@ public class Executor {
     //takes longer to run because of regex usage, but it also does a lot, so it's fine
     static void simplifyObjectReferences() {
         System.out.print("Simplifying object references...    ");
+
         Matcher fieldsMatcher = Pattern.compile("[*&]*\\(([^(]*)\\.fields\\)").matcher("");
         Matcher structureMatcher = Pattern.compile("[*&]*\\(([^ ()-]*)\\.(?:klass\\.vtable|fields)\\)").matcher("");
         Matcher ptr1Matcher = Pattern.compile("\\((([^.\\n\\r]*)\\._\\d*?_([a-zA-Z0-9_]*)\\.method)Ptr\\)\\((?:\\2,)?((?:.*?\\(.*?\\),|.*?,)*)\\1?\\)").matcher("");
@@ -555,18 +556,20 @@ public class Executor {
                 parenthesisMatcher.reset(line);
             }
 
-            resultBuilder.append(line).append(System.lineSeparator());
+            appendWithNewLine(line);
         }
     }
 
     static void replaceNullChecks() {
         System.out.print("Replacing null checks...    ");
+
         boolean inBlock = false;
         String blockEnd = null;
         int indentationPos;
         int variablePos;
         String indentation = null;
         String variableName = null;
+        int pos;
         List<String> blockContent = new ArrayList<>();
 
         for (String line : lines) {
@@ -578,24 +581,27 @@ public class Executor {
                     //if block ends with a return/goto statement, cancel collapsing to preserve logic
                     if (blockContent.getLast().contains(" return") || blockContent.getLast().contains(" goto")) {
                         for (String blockLine : blockContent) {
-                            resultBuilder.append(blockLine).append(System.lineSeparator());
+                            appendWithNewLine(blockLine);
                         }
-                        resultBuilder.append(indentation).append("}").append(System.lineSeparator());
+                        append(indentation);
+                        appendWithNewLine("}");
                     }
                     else {
                         //replace block header with a null check marker
-                        resultBuilder.append(System.lineSeparator());
-                        resultBuilder.append(indentation).append("//").append(variableName).append(" null check");
-                        resultBuilder.append(System.lineSeparator());
-                        resultBuilder.append(System.lineSeparator());
+                        appendEmpty();
+                        append(indentation);
+                        append("//");
+                        append(variableName);
+                        append(" null check");
+                        appendEmpty();
+                        appendEmpty();
 
                         for (int i = 1; i < blockContent.size(); i++) {
                             String blockLine = blockContent.get(i);
                             if (!blockLine.isEmpty()) {
-                                if (blockContent.get(i).charAt(0) == ' ') resultBuilder.append(blockContent.get(i).substring(TAB_LENGTH));
-                                else resultBuilder.append(blockContent.get(i));
+                                if (blockContent.get(i).charAt(0) == ' ') appendWithNewLine(blockContent.get(i).substring(TAB_LENGTH));
+                                else appendWithNewLine(blockContent.get(i));
                             }
-                            resultBuilder.append(System.lineSeparator());
                         }
                     }
                     blockContent.clear();
@@ -605,32 +611,30 @@ public class Executor {
             }
             else {
                 if (line.isEmpty()) {
-                    resultBuilder.append(line).append(System.lineSeparator());
+                    appendEmpty();
                     continue;
                 }
                 //checking if current line is a header of a null check if block
                 if (line.charAt(line.length() - 1) == '{') {
-                    int pos = 0;
                     //skip indentation
-                    while (pos != line.length() && line.charAt(pos) == ' ') pos++;
+                    pos = skipWhile(line, 0, ' ');
                     indentationPos = pos;
 
                     //check 'if (' segment
-                    if (line.charAt(pos++) != 'i' || line.charAt(pos++) != 'f' || line.charAt(pos++) != ' ' || line.charAt(pos++) != '(') {
-                        resultBuilder.append(line).append(System.lineSeparator());
+                    if (!textAfterEquals(line, pos, "if (")) {
+                        appendWithNewLine(line);
                         continue;
                     }
+                    pos += 4;
 
                     //getting variable name
-                    while (line.charAt(pos) != ' ') pos++;
+                    pos = skipUntil(line, pos, ' ');
                     variablePos = pos;
 
                     //check the rest of the header
                     pos++;
-                    if (line.charAt(pos++) != '!' || line.charAt(pos++) != '=' || line.charAt(pos++) != ' ' || line.charAt(pos++) != 'N'
-                        || line.charAt(pos++) != 'U' || line.charAt(pos++) != 'L' || line.charAt(pos++) != 'L' || line.charAt(pos++) != ')'
-                        || line.charAt(pos++) != ' ' || line.charAt(pos) != '{') {
-                        resultBuilder.append(line).append(System.lineSeparator());
+                    if (!textAfterEquals(line, pos, "!= NULL) {")) {
+                        appendWithNewLine(line);
                         continue;
                     }
                     //start editing the if block
@@ -641,9 +645,7 @@ public class Executor {
 
                     blockContent.add(line);
                 }
-                else {
-                    resultBuilder.append(line).append(System.lineSeparator());
-                }
+                else appendWithNewLine(line);
             }
         }
     }
@@ -658,6 +660,7 @@ public class Executor {
         int variablePos;
         String indentation = null;
         String variableName = null;
+        int pos;
         List<String> blockContent = new ArrayList<>();
 
         lines.add(input.getFirst());
@@ -699,26 +702,24 @@ public class Executor {
                 }
                 //checking if current line is a header of a null check if block
                 if (line.charAt(line.length() - 1) == '{') {
-                    int pos = 0;
                     //skip indentation
-                    while (pos != line.length() && line.charAt(pos) == ' ') pos++;
+                    pos = skipWhile(line, 0, ' ');
                     indentationPos = pos;
 
                     //check 'if (' segment
-                    if (line.charAt(pos++) != 'i' || line.charAt(pos++) != 'f' || line.charAt(pos++) != ' ' || line.charAt(pos++) != '(') {
+                    if (!textAfterEquals(line, pos, "if (")) {
                         lines.add(line);
                         continue;
                     }
+                    pos += 4;
 
                     //getting variable name
-                    while (line.charAt(pos) != ' ') pos++;
+                    pos = skipUntil(line, pos, ' ');
                     variablePos = pos;
 
                     //check the rest of the header
                     pos++;
-                    if (line.charAt(pos++) != '!' || line.charAt(pos++) != '=' || line.charAt(pos++) != ' ' || line.charAt(pos++) != 'N'
-                        || line.charAt(pos++) != 'U' || line.charAt(pos++) != 'L' || line.charAt(pos++) != 'L' || line.charAt(pos++) != ')'
-                        || line.charAt(pos++) != ' ' || line.charAt(pos) != '{') {
+                    if (!textAfterEquals(line, pos, "!= NULL) {")) {
                         lines.add(line);
                         continue;
                     }
@@ -738,18 +739,18 @@ public class Executor {
 
     static void removeArrayBoundChecks() {
         System.out.print("Removing array bound checks...    ");
+
         boolean inBlock = false;
         Stack<String> blockEnds = new Stack<>();
         Matcher headerMatcher = Pattern.compile("^( *)if \\((?:\\d+ < [^-.]+(?:->|.)max_length|[^-.]+(?:->|.)max_length != 0)\\) \\{$").matcher("");
 
         for (String line : lines) {
             ProgressTracker.progress();
+            if (line.isEmpty()) {
+                appendEmpty();
+                continue;
+            }
             if (inBlock) {
-                if (line.isEmpty()) {
-                    resultBuilder.append(System.lineSeparator());
-                    continue;
-                }
-
                 //nested block header
                 if (line.charAt(line.length() - 1) == '{' && line.contains("max_length")) {
                     headerMatcher.reset(line);
@@ -764,16 +765,11 @@ public class Executor {
                 }
                 //normal line
                 else {
-                    if (line.charAt(0) == ' ') resultBuilder.append(line.substring(TAB_LENGTH * blockEnds.size()));
-                    else resultBuilder.append(line);
-                    resultBuilder.append(System.lineSeparator());
+                    if (line.charAt(0) == ' ') appendWithNewLine(line.substring(TAB_LENGTH * blockEnds.size()));
+                    else appendWithNewLine(line);
                 }
             }
             else {
-                if (line.isEmpty()) {
-                    resultBuilder.append(line).append(System.lineSeparator());
-                    continue;
-                }
                 //check header
                 if (line.charAt(line.length() - 1) == '{' && line.contains("max_length")) {
                     headerMatcher.reset(line);
@@ -782,15 +778,14 @@ public class Executor {
                         blockEnds.push(headerMatcher.group(1) + '}');
                     }
                 }
-                else {
-                    resultBuilder.append(line).append(System.lineSeparator());
-                }
+                else appendWithNewLine(line);
             }
         }
     }
 
     static void simplifyArrayAccess() {
         System.out.print("Simplifying array access...    ");
+
         String initializationFunction = JOptionPane.showInputDialog(null,
                 """
                         Enter the name of an array initialization function.
@@ -810,129 +805,40 @@ public class Executor {
         Matcher matcher = Pattern.compile("^( *[^ ]+ = )" + initializationFunction + "\\((.+)___TypeInfo,(.*)\\);$").matcher("");
         for (String line : lines) {
             ProgressTracker.progress();
-
-            matcher.reset(line);
-            if (matcher.find()) {
-                resultBuilder.append(matcher.group(1)).append("new ").append(matcher.group(2)).append('[').append(matcher.group(3)).append("];")
-                        .append(System.lineSeparator());
+            if (line.isEmpty()) {
+                appendEmpty();
                 continue;
             }
-            resultBuilder.append(line.replace(".m_Items[", "[").replace("_array", "[]")).append(System.lineSeparator());
+            matcher.reset(line);
+            if (matcher.find()) {
+                append(matcher.group(1));
+                append("new ");
+                append(matcher.group(2));
+                append("[");
+                append(matcher.group(3));
+                appendWithNewLine("];");
+                continue;
+            }
+            appendWithNewLine(line.replace(".m_Items[", "[").replace("_array", "[]"));
         }
     }
 
-    static void formatGenericTypes3() {
-        System.out.print("Restoring generic type formatting...    ");
-        boolean inBlock = false;
-        boolean checkLabel = false;
-        int pos;
-        int indentationPos;
-
-        String label = null;
-        List<String> methodLines = new ArrayList<>();
-        Map<String, String> exitLabels = new HashMap<>();
-
-        for (String line : lines) {
-            ProgressTracker.progress();
-            if (inBlock) {
-                if (line.isEmpty()) {
-                    methodLines.add("");
-                    continue;
-                }
-
-                //check if label points to a return statement
-                if (checkLabel) {
-                    pos = 0;
-                    while (pos != line.length() && line.charAt(pos) == ' ') pos++;
-                    indentationPos = pos;
-
-                    if (line.charAt(pos++) == 'r' && line.charAt(pos++) == 'e' && line.charAt(pos++) == 't' && line.charAt(pos++) == 'u'
-                            && line.charAt(pos++) == 'r' && line.charAt(pos) == 'n') {
-                        exitLabels.put(label, line.substring(indentationPos));
-                        methodLines.removeLast();
-                    }
-                    checkLabel = false;
-                    methodLines.add(line);
-                    continue;
-                }
-                //method end
-                if (line.charAt(0) == '}') {
-                    inBlock = false;
-                    //remove unnecessary void return statements
-                    for (int i = methodLines.size() - 1; i >= 0; i--) {
-                        String methodLine = methodLines.get(i);
-                        if (methodLine.isEmpty() || methodLine.charAt(0) != ' ') continue;
-                        pos = 0;
-                        while (pos != methodLine.length() && methodLine.charAt(pos) == ' ') pos++;
-                        if (pos == methodLine.length() || methodLine.charAt(pos) == '}') continue;
-                        if (methodLine.charAt(pos++) == 'r' && methodLine.charAt(pos++) == 'e' && methodLine.charAt(pos++) == 't' && methodLine.charAt(pos++) == 'u'
-                                && methodLine.charAt(pos++) == 'r' && methodLine.charAt(pos++) == 'n' && methodLine.charAt(pos) == ';') {
-                            methodLines.remove(i);
-                        }
-                        else break;
-                    }
-                    //goto statement replacement
-                    for (String methodLine : methodLines) {
-                        if (methodLine.isEmpty()) {
-                            resultBuilder.append(System.lineSeparator());
-                            continue;
-                        }
-                        if (methodLine.charAt(0) != ' ') {
-                            resultBuilder.append(methodLine).append(System.lineSeparator());
-                            continue;
-                        }
-                        pos = methodLine.indexOf("goto");
-                        if (pos != -1 && methodLine.length() >= pos + 17 && methodLine.charAt(pos + 5) == 'L') {
-                            label = methodLine.substring(pos + 5, pos + 18);
-                            if (exitLabels.containsKey(label)) {
-                                resultBuilder.append(methodLine, 0, pos).append(exitLabels.get(label)).append(System.lineSeparator());
-                                continue;
-                            }
-                        }
-                        resultBuilder.append(methodLine).append(System.lineSeparator());
-                    }
-                    methodLines.clear();
-                    resultBuilder.append(line).append(System.lineSeparator());
-                    continue;
-                }
-                //label
-                if (line.charAt(0) == 'L' && line.charAt(1) == 'A' && line.charAt(2) == 'B' && line.charAt(3) == '_') {
-                    checkLabel = true;
-                    label = line.substring(0, 13);
-                }
-                methodLines.add(line);
-            }
-            else {
-                if (line.isEmpty()) {
-                    resultBuilder.append(System.lineSeparator());
-                    continue;
-                }
-                //check if current line is a function header
-                if ((line.charAt(0) != ' ' || line.charAt(0) != '/' || line.charAt(0) != '}'
-                        || (line.charAt(0) != 'L' && line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'))
-                        && line.charAt(line.length() - 1) == '{') {
-                    inBlock = true;
-                }
-                resultBuilder.append(line).append(System.lineSeparator());
-            }
-        }
-    }
-
-    //todo multiargument generic types
-    static void formatGenericTypes2() {
+    //horrifying
+    static void formatGenericTypes() {
         System.out.print("Formatting generic types (step 1)...    ");
 
-        Map<String, Integer> types = new HashMap<>();
-        Map<String, Integer> subtypes = new HashMap<>();
+        //ATTEMPTING TO FIND GENERIC TYPES AND DETERMINING THEIR TYPE PARAMETER COUNTS
+        Map<String, Integer> typesWithArgs = new HashMap<>();
+        Map<String, Integer> subtypesWithArgs = new HashMap<>();
 
-        Matcher typeMatcher = Pattern.compile("Method_([^< ]*?)(?<=[^_])<((?:([a-zA-Z_]+<[a-zA-Z_]*>),?|[a-zA-Z_]+,?)*)>").matcher("");
+        Matcher typeMatcher = Pattern.compile("Method_([^< ]*?)(?<=[^_])<((?:([a-zA-Z_]+<[a-zA-Z_]*>),?|[a-zA-Z_]+,?)*)>(?=_*[A-Za-z])").matcher("");
         int pos;
         int argCount;
         Integer i;
         String args;
         String name;
 
-        //FINDING GENERIC TYPES
+        //finding generic types with preserved formatting. Good data with accurate arg counts, but not all types are found
         for (String line : lines) {
             ProgressTracker.progress();
 
@@ -950,10 +856,10 @@ public class Executor {
                         }
                         pos++;
                     }
-                    i = types.get(typeMatcher.group(1));
+                    i = typesWithArgs.get(typeMatcher.group(1));
 
-                    if (i == null) types.put(typeMatcher.group(1), argCount);
-                    else if (argCount > i) types.put(typeMatcher.group(1), argCount);
+                    if (i == null) typesWithArgs.put(typeMatcher.group(1), argCount);
+                    else if (argCount > i) typesWithArgs.put(typeMatcher.group(1), argCount);
 
                     //parsing sub-type
                     args = typeMatcher.group(3);
@@ -971,170 +877,327 @@ public class Executor {
                         }
                         pos++;
                     }
-                    i = subtypes.get(name);
+                    i = subtypesWithArgs.get(name);
 
-                    if (i == null) subtypes.put(name, argCount);
-                    else if (argCount > i) subtypes.put(name, argCount);
+                    if (i == null) subtypesWithArgs.put(name, argCount);
+                    else if (argCount > i) subtypesWithArgs.put(name, argCount);
                 }
-            }
-        }
-        for (Map.Entry entry : types.entrySet()) System.out.println(entry.getKey() + " - " + entry.getValue());
-        System.out.println("----------------------------------------------------------------------------------");
-        for (Map.Entry entry : subtypes.entrySet()) System.out.println(entry.getKey() + " - " + entry.getValue());
-    }
-
-    //todo multiargument generic types
-    static void formatGenericTypes() {
-        System.out.print("Formatting generic types (step 1)...    ");
-
-        Matcher garbageMatcher = Pattern.compile("___c(?:__\\d*)?(?:DisplayClass\\d*_\\d)?$|_d__\\d*$").matcher("");
-
-        Map<String, Integer> types = new HashMap<>();
-        int index;
-        int pos;
-
-        //FINDING GENERIC TYPES
-        {
-            int innerPos;
-            String type;
-
-            for (String line : lines) {
-                ProgressTracker.progress();
-
-                index = 0;
-                loop:
-                while (index != -1) {
-                    index = line.indexOf("_T_", index);
-                    if (index != -1) {
-                        pos = index;
-                        while (pos != -1 && line.charAt(pos) != ' ') {
-                            char c = line.charAt(pos);
-                            if (c == ',' || c == '(' || c == '.' || c == '>' || c == '*') {
-                                index++;
-                                continue loop;
-                            }
-                            pos--;
-                        }
-                        type = line.substring(pos + 1, index);
-
-                        innerPos = 0;
-                        while (innerPos != type.length() && (type.charAt(innerPos) < 65 || type.charAt(innerPos) > 90)) innerPos++;
-                        if (innerPos != type.length()) type = type.substring(innerPos);
-
-                        garbageMatcher.reset(type);
-                        if (garbageMatcher.find()) type = garbageMatcher.replaceAll("");
-
-                        if (!type.isEmpty() && !type.startsWith("STR")) {
-                            types.compute(type, (s, i) -> i == null ? 1 : i + 1);
-                        }
-
-                        index += 3;
-                    }
-                }
-            }
-            for (Map.Entry s : types.entrySet().stream().sorted(
-                        (o1, o2) -> Integer.compare(o2.getValue(), o1.getValue()))
-                .toArray(Map.Entry[]::new)) System.out.println(s.getValue() + " - " + s.getKey());
-        }
-        ProgressTracker.reset(types.size());
-
-        System.out.print("Formatting generic types (step 2)...    ");
-
-        //EXTRACTING SUBTYPES FROM FOUND TYPES
-        //System_Collections_Generic_Stack, System_Collections_Generic_Stack_Enumerator -> System_Collections_Generic_Stack, Enumerator
-        Map<String, Integer> typesFinal = new HashMap<>((int) (types.size() * 1.1));
-        int minLength = Integer.MAX_VALUE;
-        {
-            String type;
-            String subType;
-
-            loop:
-            for (Map.Entry<String, Integer> entry : types.entrySet()) {
-                ProgressTracker.progress();
-                type = entry.getKey();
-                index = type.lastIndexOf('_');
-
-                if (index == -1) {
-                    typesFinal.merge(type, entry.getValue(), Integer::sum);
-                    minLength = Math.min(type.length(), minLength);
-                    continue;
-                }
-
-                subType = type.substring(index + 1);
-                type = type.substring(0, index);
-                for (Map.Entry<String, Integer> entry2 : types.entrySet()) {
-                    if (entry2.getKey().equals(type)) {
-                        typesFinal.merge(type, entry.getValue(), Integer::sum);
-                        typesFinal.merge(subType,  entry.getValue(), Integer::sum);
-                        minLength = Math.min(type.length(), minLength);
-                        minLength = Math.min(subType.length(), minLength);
-                        continue loop;
-                    }
-                }
-                typesFinal.merge(entry.getKey(), entry.getValue(), Integer::sum);
-                minLength = Math.min(entry.getKey().length(), minLength);
             }
         }
         ProgressTracker.reset();
 
-        minLength += TAB_LENGTH + 1;
-        //sorted by frequency to match faster
-        String[] typesSorted = typesFinal.entrySet().stream().sorted(
-                (o1, o2) -> Integer.compare(o2.getValue(), o1.getValue()))
-                .map(Map.Entry::getKey)
-                .toArray(String[]::new);
-        for (Map.Entry s : typesFinal.entrySet().stream().sorted(
-                        (o1, o2) -> Integer.compare(o2.getValue(), o1.getValue()))
-                .toArray(Map.Entry[]::new)) System.out.println(s.getValue() + " - " + s.getKey());
+        System.out.print("Formatting generic types (step 2)...    ");
 
-        System.out.print("Formatting generic types (step 3)...    ");
+        Matcher garbageMatcher = Pattern.compile("___c(?:__\\d*)?(?:DisplayClass\\d*_\\d)?$|_d__\\d*$").matcher("");
+        Set<String> badTypes = new HashSet<>();
+        int index;
 
-        //FINDING TYPE USAGES AND ADDING ANGLE BRACKETS
-        int bracketPos;
+        //finding generic types through a '_T_' string. Could find additional types, but gives a lot of garbage and has to be extra processed
+        int innerPos;
+        String type;
+        int searchIndex;
 
         for (String line : lines) {
             ProgressTracker.progress();
 
-            //skip short lines
-            if (line.length() < minLength) {
-                if (!line.isEmpty()) resultBuilder.append(line);
-                resultBuilder.append(System.lineSeparator());
-                continue;
-            }
-            //fast track matching check
-            if (line.indexOf('_') == -1) {
-                resultBuilder.append(line).append(System.lineSeparator());
-                continue;
-            }
-
-            pos = 0;
-            while (pos != line.length() && line.charAt(pos) != ' ') pos++;
+            index = 0;
             loop:
-            for (String type : typesSorted) {
-                index = pos;
-                while (true) {
-                    index = line.indexOf(type, index);
-                    if (index == -1) break;
+            while (index != -1) {
+                index = line.indexOf("_T_", index);
+                if (index != -1) {
+                    pos = index;
+                    while (pos != -1 && line.charAt(pos) != ' ') {
+                        char c = line.charAt(pos);
+                        if (c == ',' || c == '(' || c == '.' || c == '>' || c == '*') {
+                            index++;
+                            continue loop;
+                        }
+                        pos--;
+                    }
+                    type = line.substring(pos + 1, index);
 
-                    index += type.length();
-                    if (line.charAt(index) != '_') continue;
+                    innerPos = 0;
+                    while (innerPos != type.length() && (type.charAt(innerPos) < 65 || type.charAt(innerPos) > 90)) innerPos++;
+                    if (innerPos != type.length()) type = type.substring(innerPos);
 
-                    char[] lineChars = line.toCharArray();
-                    bracketPos = index;
-                    index++;
+                    garbageMatcher.reset(type);
+                    if (garbageMatcher.find()) type = garbageMatcher.replaceAll("");
 
-                    while (lineChars[index] != '_') {
-                        if (lineChars[index] == ' ') break;
-                        index++;
-                        if (index == lineChars.length) break loop;
+                    searchIndex = type.indexOf("_T_");
+                    if (searchIndex != -1) type = type.substring(0, searchIndex);
+
+                    searchIndex = type.indexOf("__");
+                    if (searchIndex != -1) type = type.substring(0, searchIndex);
+
+                    if (!type.isEmpty() && !type.startsWith("STR")) {
+                        badTypes.add(type);
                     }
 
-                    lineChars[bracketPos] = '<';
-                    lineChars[index] = '>';
-                    line = String.copyValueOf(lineChars);
+                    index += 3;
                 }
             }
-            resultBuilder.append(line).append(System.lineSeparator());
+        }
+        ProgressTracker.reset();
+
+        System.out.print("Formatting generic types (step 3)...    ");
+
+        //clear up bad type search output
+        Iterator<String> iterator = badTypes.iterator();
+        while (iterator.hasNext()) {
+            type = iterator.next();
+            //remove confirmed good types from bad types
+            if (typesWithArgs.containsKey(type)) iterator.remove();
+                //remove garbage coming from multi-arg generics
+            else if (type.charAt(type.length() - 1) == '_') iterator.remove();
+        }
+        ProgressTracker.set(10);
+
+        //sorting the good types by type length in descending order to match types like List.Enumerator before List
+        List<Map.Entry<String, Integer>> goodTypesSorted = new ArrayList<>(typesWithArgs.entrySet());
+        goodTypesSorted.sort((o1, o2) -> Integer.compare(o2.getKey().length(), o1.getKey().length()));
+
+        ProgressTracker.set(20);
+
+        //comparing bad types with known good types to remove false positives and extract additional generic subtypes
+        iterator = badTypes.iterator();
+        while (iterator.hasNext()) {
+            String badType = iterator.next();
+            for (Map.Entry<String, Integer> goodType : goodTypesSorted) {
+                if (badType.startsWith(goodType.getKey() + "_")) {
+                    //if a bad type matches a known good type with one arg, then it's argument type is a generic too
+                    if (goodType.getValue() == 1) {
+                        subtypesWithArgs.put(badType.substring(goodType.getKey().length() + 1), 1); //assuming 1 arg for subtype
+                    }
+                    //if a matched good type is multi-arg, then there's no information to extract really
+                    iterator.remove();
+                    break;
+                }
+            }
+        }
+
+        ProgressTracker.set(30);
+
+        //remove duplicates within subtypes
+        iterator = subtypesWithArgs.keySet().iterator();
+        while (iterator.hasNext()) {
+            type = iterator.next();
+            index = type.indexOf('_');
+            if (index != -1) {
+                type = type.substring(index + 1);
+                for (String subType : subtypesWithArgs.keySet()) {
+                    if (subType.equals(type)) {
+                        iterator.remove();
+                        break;
+                    }
+                }
+            }
+        }
+
+        ProgressTracker.set(40);
+
+        //remove duplicate subtypes by comparison
+        String subTypeWithPrefix;
+        iterator = subtypesWithArgs.keySet().iterator();
+        loop:
+        while (iterator.hasNext()) {
+            String subType = iterator.next();
+            if (typesWithArgs.containsKey(subType) || badTypes.contains(subType)) {
+                iterator.remove();
+                continue;
+            }
+            subTypeWithPrefix = "_" + subType;
+            for (String t : typesWithArgs.keySet()) {
+                if (t.endsWith(subTypeWithPrefix)) {
+                    iterator.remove();
+                    continue loop;
+                }
+            }
+            for (String t : badTypes) {
+                if (t.endsWith(subTypeWithPrefix)) {
+                    iterator.remove();
+                    continue loop;
+                }
+            }
+        }
+
+        ProgressTracker.set(50);
+
+        //remove bad type false positives by comparing with subtyped good types (might be lossy, but I don't care)
+        List<String> goodTypeTokens = typesWithArgs.keySet().stream().map(s -> s.indexOf('_') == -1 ? '_' + s : s.substring(s.lastIndexOf('_'))).toList();
+        iterator = badTypes.iterator();
+        while (iterator.hasNext()) {
+            type = iterator.next();
+            for (String token : goodTypeTokens) {
+                if (type.endsWith(token)) {
+                    iterator.remove();
+                    break;
+                }
+            }
+        }
+        goodTypeTokens = null;
+
+        ProgressTracker.set(60);
+
+        //remove duplicates within bad types
+        iterator = badTypes.iterator();
+        while (iterator.hasNext()) {
+            type = iterator.next();
+            index = type.indexOf('_');
+            if (index != -1) {
+                type = type.substring(index + 1);
+                for (String subType : subtypesWithArgs.keySet()) {
+                    if (subType.equals(type)) {
+                        iterator.remove();
+                        break;
+                    }
+                }
+            }
+        }
+
+        ProgressTracker.set(70);
+
+        //finishing up bad type processing by adding them to good types with unlimited parameter counts
+        for (String badType : badTypes) {
+            typesWithArgs.put(badType, Integer.MAX_VALUE);
+        }
+        badTypes = null;
+
+        ProgressTracker.set(80);
+
+        //tokenizing all known types to be used as subtypes
+        for (Map.Entry<String, Integer> entry : typesWithArgs.entrySet()) {
+            type = entry.getKey();
+            index = type.lastIndexOf('_');
+            if (index != -1)
+                subtypesWithArgs.put(type.substring(index + 1), entry.getValue());
+            else
+                subtypesWithArgs.put(type, entry.getValue());
+        }
+
+        ProgressTracker.end();
+        ProgressTracker.reset();
+
+        System.out.print("Formatting generic types (step 4)...    ");
+
+        //FORMATTING TYPES
+        boolean doReplace = false;
+        boolean withIndent;
+        StringBuilder builder = new StringBuilder(1000);
+        char[] chars;
+        String lastArg;
+        int backtrackPos;
+        int braceCount;
+        int endPos;
+        char[] indentArr = new char[TAB_LENGTH];
+        Arrays.fill(indentArr, ' ');
+
+        List<String> typesSorted = new ArrayList<>(typesWithArgs.keySet());
+        List<String> subtypesSorted = new ArrayList<>(subtypesWithArgs.keySet());
+        typesSorted.sort((o1, o2) -> Integer.compare(o2.length(), o1.length()));
+        subtypesSorted.sort((o1, o2) -> Integer.compare(o2.length(), o1.length()));
+
+        lineLoop:
+        for (String line : lines) {
+            ProgressTracker.progress();
+            if (line.isEmpty()) {
+                appendEmpty();
+                doReplace = false;
+                continue;
+            }
+
+            if (line.charAt(0) == '}') {
+                appendWithNewLine(line);
+                doReplace = false;
+                continue;
+            }
+
+            if (doReplace || isFunctionHeader(line)) {
+                withIndent = doReplace;
+                doReplace = true;
+                braceCount = 0;
+
+                pos = line.indexOf(' ', withIndent ? TAB_LENGTH : 0);
+                try {
+                    if (pos != -1 && line.charAt(pos - 2) == '_' && line.charAt(pos - 3) == '_') { //check for generic
+
+                        builder.setLength(0);
+                        if (withIndent) builder.append(indentArr);
+
+                        type = line.substring(withIndent ? TAB_LENGTH : 0, pos);
+
+                        for (String t : typesSorted) {
+                            if (type.startsWith(t)) { //type is known
+                                chars = type.substring(t.length() + 1).toCharArray();
+                                builder.append(t);
+                                builder.append('<');
+                                braceCount++;
+                                innerPos = 0;
+
+                                loop:
+                                while (innerPos != chars.length) {
+                                    if (chars[innerPos] == '_') {
+                                        //check for type end
+                                        endPos = innerPos;
+                                        while (endPos != chars.length && chars[endPos] == '_') endPos++;
+                                        if (endPos == chars.length - 1) { //type end
+                                            while (innerPos != chars.length - 2) {
+                                                innerPos++;
+                                                if (braceCount > 0) {
+                                                    builder.append('>');
+                                                    braceCount--;
+                                                } else builder.append('_');
+                                            }
+                                            builder.append('_').append(chars[innerPos + 1]);
+                                            break;
+                                        }
+                                        if (chars[innerPos + 1] == '_') {
+                                            innerPos++;
+                                            builder.append(',');
+                                        } else { //generic type parameter or non-generic subclass
+                                            backtrackPos = builder.length() - 1;
+                                            while (backtrackPos != 0 && builder.charAt(backtrackPos) != ',' && builder.charAt(backtrackPos) != '<')
+                                                backtrackPos--;
+                                            lastArg = builder.substring(backtrackPos + 1);
+                                            for (String st : subtypesSorted) {
+                                                if (lastArg.equals(st)) {
+                                                    builder.append('<');
+                                                    braceCount++;
+                                                    innerPos++;
+                                                    continue loop;
+                                                }
+                                            }
+                                            builder.append('_');
+                                        }
+                                    } else builder.append(chars[innerPos]);
+                                    innerPos++;
+                                }
+                                appendWithNewLine(builder + line.substring(pos));
+                                continue lineLoop;
+                            }
+                        }
+                        //type is not known
+                        innerPos = type.length() - 2;
+                        while (innerPos != 0 && type.charAt(innerPos) == '_') innerPos--;
+                        while (innerPos != 0 && type.charAt(innerPos) != '_') innerPos--;
+                        builder.append(type, 0, innerPos);
+                        builder.append('<');
+                        innerPos++;
+                        while (innerPos != type.length() - 2 && type.charAt(innerPos) != '_') {
+                            builder.append(type.charAt(innerPos));
+                            innerPos++;
+                        }
+                        builder.append('>').append('_').append(type.charAt(type.length() - 1));
+                        appendWithNewLine(builder + line.substring(pos));
+                    } else appendWithNewLine(line);
+                }
+                catch (Exception e) {
+                    System.out.println();
+                    System.out.println(withIndent);
+                    System.out.println(line);
+                    throw new RuntimeException(e);
+                }
+            }
+            else appendWithNewLine(line);
         }
     }
 
@@ -1145,12 +1208,73 @@ public class Executor {
 
         for (String line : lines) {
             ProgressTracker.progress();
-
+            if (line.isEmpty()) {
+                appendEmpty();
+                continue;
+            }
             matcher.reset(line);
-            line = matcher.replaceAll(".");
-
-            resultBuilder.append(line).append(System.lineSeparator());
+            appendWithNewLine(matcher.replaceAll("."));
         }
+    }
+
+    private static boolean isFunctionHeader(String line) {
+        return line.length() < 3 || (line.charAt(0) != ' ' && line.charAt(0) != '/' && line.charAt(0) != '}'
+                && line.charAt(0) != 'L' && line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'
+                && line.charAt(line.length() - 1) == '{');
+    }
+
+    private static boolean textAfterEquals(String line, int pos, String text) {
+        char[] chars = text.toCharArray();
+        int charPos = 0;
+
+        while (pos != line.length() && charPos != chars.length) {
+            if (line.charAt(pos++) != chars[charPos++]) return false;
+        }
+        return charPos == chars.length;
+    }
+
+    private static boolean textBeforeEquals(String line, int pos, String text) {
+        char[] chars = text.toCharArray();
+        int charPos = chars.length - 1;
+
+        while (pos != 0 && charPos != 0) {
+            if (line.charAt(pos--) != chars[charPos--]) return false;
+        }
+        return charPos == 0;
+    }
+
+    private static int skipWhile(String line, int pos, char c) {
+        while (pos != line.length() && line.charAt(pos) == c) pos++;
+        return pos;
+    }
+
+    private static int skipUntil(String line, int pos, char c) {
+        while (pos != line.length() && line.charAt(pos) != c) pos++;
+        return pos;
+    }
+
+    private static int skipUntil(String line, int pos, char... chars) {
+        char current;
+        while (pos != line.length()) {
+            current = line.charAt(pos);
+            for (char c : chars) {
+                if (c == current) return pos;
+            }
+            pos++;
+        }
+        return pos;
+    }
+
+    private static void appendEmpty() {
+        resultBuilder.append(System.lineSeparator());
+    }
+
+    private static void append(String s) {
+        resultBuilder.append(s);
+    }
+
+    private static void appendWithNewLine(String s) {
+        resultBuilder.append(s).append(System.lineSeparator());
     }
 
     static class ProgressTracker {
@@ -1165,10 +1289,11 @@ public class Executor {
             counter = 0;
         }
 
-        static void reset(int steps) {
-            split = steps / 100;
-            current = 0;
-            counter = 0;
+        static void set(int progress) {
+            counter = progress;
+            if (counter < 10) System.out.print("\b\b\b " + counter + "%");
+            else if (counter == 100) System.out.println("\b\b\b\b " + counter + "%");
+            else if (counter < 100) System.out.print("\b\b\b\b " + counter + "%");
         }
 
         static void progress() {
