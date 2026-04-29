@@ -890,7 +890,7 @@ public class Executor {
             return;
         }
 
-        Matcher matcher = Pattern.compile("^( *[^ ]+ = )" + arrayInitFunction + "\\((.+)___TypeInfo,(.*)\\);$").matcher("");
+        Matcher matcher = Pattern.compile("^( *[^ ]+ = )" + arrayInitFunction + "\\((.+)___TypeInfo,?(.*)\\);$").matcher("");
         for (String line : lines) {
             ProgressTracker.progress();
             if (line.isEmpty()) {
@@ -916,14 +916,14 @@ public class Executor {
     static void formatGenericTypes() {
         System.out.print("Formatting generic types (step 1)...    ");
 
-        //ATTEMPTING TO FIND GENERIC TYPES AND DETERMINING THEIR TYPE PARAMETER COUNTS
-        Map<String, Integer> typesWithArgs = new HashMap<>();
-        Map<String, Integer> subtypesWithArgs = new HashMap<>();
+        //ATTEMPTING TO FIND GENERIC TYPES AND DETERMINING THEIR TYPE PARAMETER COUNTS (1 or more)
+        Map<String, Boolean> typesWithArgs = new HashMap<>();
+        Set<String> subtypes = new HashSet<>();
 
         Matcher typeMatcher = Pattern.compile("Method_([^< ]*?)(?<=[^_])<((?:([a-zA-Z_]+<[a-zA-Z_]*>),?|[a-zA-Z_]+,?)*)>(?=_*[A-Za-z])").matcher("");
         int pos;
         int argCount;
-        Integer i;
+        Boolean b;
         String args;
         String name;
 
@@ -945,10 +945,11 @@ public class Executor {
                         }
                         pos++;
                     }
-                    i = typesWithArgs.get(typeMatcher.group(1));
-
-                    if (i == null) typesWithArgs.put(typeMatcher.group(1), argCount);
-                    else if (argCount > i) typesWithArgs.put(typeMatcher.group(1), argCount);
+                    b = typesWithArgs.get(typeMatcher.group(1));
+                    if (b == null) typesWithArgs.put(typeMatcher.group(1), argCount == 1);
+                    else {
+                        if (argCount != 1 && b) typesWithArgs.put(typeMatcher.group(1), Boolean.FALSE);
+                    }
 
                     //parsing sub-type
                     args = typeMatcher.group(3);
@@ -966,10 +967,7 @@ public class Executor {
                         }
                         pos++;
                     }
-                    i = subtypesWithArgs.get(name);
-
-                    if (i == null) subtypesWithArgs.put(name, argCount);
-                    else if (argCount > i) subtypesWithArgs.put(name, argCount);
+                    subtypes.add(name);
                 }
             }
         }
@@ -1042,7 +1040,7 @@ public class Executor {
         ProgressTracker.set(10);
 
         //sorting the good types by type length in descending order to match types like List.Enumerator before List
-        List<Map.Entry<String, Integer>> goodTypesSorted = new ArrayList<>(typesWithArgs.entrySet());
+        List<Map.Entry<String, Boolean>> goodTypesSorted = new ArrayList<>(typesWithArgs.entrySet());
         goodTypesSorted.sort((o1, o2) -> Integer.compare(o2.getKey().length(), o1.getKey().length()));
 
         ProgressTracker.set(20);
@@ -1051,11 +1049,11 @@ public class Executor {
         iterator = badTypes.iterator();
         while (iterator.hasNext()) {
             String badType = iterator.next();
-            for (Map.Entry<String, Integer> goodType : goodTypesSorted) {
+            for (Map.Entry<String, Boolean> goodType : goodTypesSorted) {
                 if (badType.startsWith(goodType.getKey() + "_")) {
                     //if a bad type matches a known good type with one arg, then it's argument type is a generic too
-                    if (goodType.getValue() == 1) {
-                        subtypesWithArgs.put(badType.substring(goodType.getKey().length() + 1), 1); //assuming 1 arg for subtype
+                    if (goodType.getValue()) {
+                        subtypes.add(badType.substring(goodType.getKey().length() + 1));
                     }
                     //if a matched good type is multi-arg, then there's no information to extract really
                     iterator.remove();
@@ -1067,14 +1065,14 @@ public class Executor {
         ProgressTracker.set(30);
 
         //remove duplicates within subtypes
-        iterator = subtypesWithArgs.keySet().iterator();
+        iterator = subtypes.iterator();
         while (iterator.hasNext()) {
             type = iterator.next();
             index = type.indexOf('_');
             if (index != -1) {
                 type = type.substring(index + 1);
-                for (String subType : subtypesWithArgs.keySet()) {
-                    if (subType.equals(type)) {
+                for (String subtype : subtypes) {
+                    if (subtype.equals(type)) {
                         iterator.remove();
                         break;
                     }
@@ -1086,7 +1084,7 @@ public class Executor {
 
         //remove duplicate subtypes by comparison
         String subTypeWithPrefix;
-        iterator = subtypesWithArgs.keySet().iterator();
+        iterator = subtypes.iterator();
         loop:
         while (iterator.hasNext()) {
             String subType = iterator.next();
@@ -1111,7 +1109,7 @@ public class Executor {
 
         ProgressTracker.set(50);
 
-        //remove bad type false positives by comparing with subtyped good types (might be lossy, but I don't care)
+        //remove bad type false positives by comparing with subtyped good types
         List<String> goodTypeTokens = typesWithArgs.keySet().stream().map(s -> s.indexOf('_') == -1 ? '_' + s : s.substring(s.lastIndexOf('_'))).toList();
         iterator = badTypes.iterator();
         while (iterator.hasNext()) {
@@ -1135,8 +1133,8 @@ public class Executor {
             index = type.indexOf('_');
             if (index != -1) {
                 type = type.substring(index + 1);
-                for (String subType : subtypesWithArgs.keySet()) {
-                    if (subType.equals(type)) {
+                for (String subtype : subtypes) {
+                    if (subtype.equals(type)) {
                         iterator.remove();
                         break;
                     }
@@ -1146,9 +1144,9 @@ public class Executor {
 
         ProgressTracker.set(70);
 
-        //finishing up bad type processing by adding them to good types with unlimited parameter counts
+        //finishing up bad type processing by adding them to good types with non-single param counts
         for (String badType : badTypes) {
-            typesWithArgs.put(badType, Integer.MAX_VALUE);
+            typesWithArgs.put(badType, Boolean.FALSE);
         }
         //noinspection UnusedAssignment
         badTypes = null;
@@ -1156,13 +1154,12 @@ public class Executor {
         ProgressTracker.set(80);
 
         //tokenizing all known types to be used as subtypes
-        for (Map.Entry<String, Integer> entry : typesWithArgs.entrySet()) {
+        for (Map.Entry<String, Boolean> entry : typesWithArgs.entrySet()) {
             type = entry.getKey();
             index = type.lastIndexOf('_');
-            if (index != -1)
-                subtypesWithArgs.put(type.substring(index + 1), entry.getValue());
-            else
-                subtypesWithArgs.put(type, entry.getValue());
+
+            if (index != -1) subtypes.add(type.substring(index + 1));
+            else subtypes.add(type);
         }
 
         ProgressTracker.end();
@@ -1183,7 +1180,7 @@ public class Executor {
         Arrays.fill(indentArr, ' ');
 
         List<String> typesSorted = new ArrayList<>(typesWithArgs.keySet());
-        List<String> subtypesSorted = new ArrayList<>(subtypesWithArgs.keySet());
+        List<String> subtypesSorted = new ArrayList<>(subtypes);
         typesSorted.sort((o1, o2) -> Integer.compare(o2.length(), o1.length()));
         subtypesSorted.sort((o1, o2) -> Integer.compare(o2.length(), o1.length()));
 
@@ -1236,7 +1233,8 @@ public class Executor {
                                                 if (braceCount > 0) {
                                                     builder.append('>');
                                                     braceCount--;
-                                                } else builder.append('_');
+                                                }
+                                                else builder.append('_');
                                             }
                                             builder.append('_').append(chars[innerPos + 1]);
                                             break;
@@ -1244,10 +1242,10 @@ public class Executor {
                                         if (chars[innerPos + 1] == '_') {
                                             innerPos++;
                                             builder.append(',');
-                                        } else { //generic type parameter or non-generic subclass
+                                        }
+                                        else { //generic type parameter or non-generic subclass
                                             backtrackPos = builder.length() - 1;
-                                            while (backtrackPos != 0 && builder.charAt(backtrackPos) != ',' && builder.charAt(backtrackPos) != '<')
-                                                backtrackPos--;
+                                            while (backtrackPos != 0 && builder.charAt(backtrackPos) != ',' && builder.charAt(backtrackPos) != '<') backtrackPos--;
                                             lastArg = builder.substring(backtrackPos + 1);
                                             for (String st : subtypesSorted) {
                                                 if (lastArg.equals(st)) {
@@ -1259,7 +1257,8 @@ public class Executor {
                                             }
                                             builder.append('_');
                                         }
-                                    } else builder.append(chars[innerPos]);
+                                    }
+                                    else builder.append(chars[innerPos]);
                                     innerPos++;
                                 }
                                 appendWithNewLine(builder + line.substring(pos));
@@ -1279,12 +1278,10 @@ public class Executor {
                         }
                         builder.append('>').append('_').append(type.charAt(type.length() - 1));
                         appendWithNewLine(builder + line.substring(pos));
-                    } else appendWithNewLine(line);
+                    }
+                    else appendWithNewLine(line);
                 }
-                catch (Exception e) {
-                    System.out.println();
-                    System.out.println(withIndent);
-                    System.out.println(line);
+                catch (Exception e) {;
                     throw new RuntimeException(e);
                 }
             }
