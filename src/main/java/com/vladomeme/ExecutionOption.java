@@ -4,11 +4,13 @@ import javax.swing.*;
 import java.awt.*;
 
 public class ExecutionOption {
-    Runnable runnable;
+    final Runnable preparation;
+    final Runnable execution;
     boolean enabled = true;
 
-    ExecutionOption(Box listBox, JLabel descHeader, JTextArea descArea, Runnable runnable, String shortDescription, String longDescription) {
-        this.runnable = runnable;
+    ExecutionOption(Box listBox, JLabel descHeader, JTextArea descArea, Runnable preparation, Runnable execution, String shortDescription, String longDescription) {
+        this.preparation = preparation;
+        this.execution = execution;
 
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout(10, 10));

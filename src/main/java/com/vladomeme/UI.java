@@ -121,16 +121,6 @@ public class UI extends JFrame {
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        JLabel processLabel = new JLabel();
-        processLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        bottomPanel.add(processLabel, BorderLayout.CENTER);
-        Executor.processLabel = processLabel;
-
-        JLabel progressLabel = new JLabel();
-        progressLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        bottomPanel.add(progressLabel, BorderLayout.EAST);
-        Executor.progressLabel = progressLabel;
-
         JButton executeButton = new JButton("Execute");
         executeButton.setFont(new Font("Arial", Font.BOLD, 14));
         executeButton.addActionListener(e -> Executor.execute(options, Path.of(selectionField.getText()), saveToCopy));
@@ -140,37 +130,37 @@ public class UI extends JFrame {
 
         options = new ArrayList<>();
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeUselessDecompilerComments,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::removeUselessDecompilerComments,
                 "Remove useless decompiler comments", OptionDescriptions.removeUselessDecompilerComments));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeNullPointerTypeCasts,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::removeNullPointerTypeCasts,
                 "Remove null pointer type casts", OptionDescriptions.removeNullPointerTypeCasts));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeMethodInitialization,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::removeMethodInitialization,
                 "Remove method initialization blocks", OptionDescriptions.removeMethodInitialization));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeStaticInitialization,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::removeStaticInitialization,
                 "Remove static initialization blocks", OptionDescriptions.removeStaticInitialization));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::simplifyProcedureInterruptions,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::simplifyProcedureInterruptions$prepare, Executor::simplifyProcedureInterruptions,
                 "Simplify procedure interruptions", OptionDescriptions.simplifyProcedureInterruptions));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::simplifyObjectReferences,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::simplifyObjectReferences,
                 "Simplify object references", OptionDescriptions.simplifyObjectReferences));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::replaceNullChecks,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::replaceNullChecks,
                 "Replace null checks", OptionDescriptions.replaceNullChecks));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeArrayBoundChecks,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::removeArrayBoundChecks,
                 "Remove array bound checks", OptionDescriptions.removeArrayBoundChecks));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::simplifyArrayAccess,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::simplifyArrayAccess$prepare, Executor::simplifyArrayAccess,
                 "Simplify array access", OptionDescriptions.simplifyArrayAccess));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::formatGenericTypes,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::formatGenericTypes,
                 "Format generic types", OptionDescriptions.formatGenericTypes));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::replaceUnderscoresForMethods,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::replaceUnderscoresForMethods,
                 "Replace underscores for methods", OptionDescriptions.replaceUnderscoresForMethods));
 
         setVisible(true);

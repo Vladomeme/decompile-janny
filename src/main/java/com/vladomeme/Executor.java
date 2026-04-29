@@ -14,30 +14,36 @@ import java.util.regex.Pattern;
 //todo eliminate methodInfo arguments
 //todo move opening angle brackets to the same line
 //todo ghidra decompile settings warning
-//todo memorize the last used text arguments
 //todo procedure order dependence warning
 //todo low memory mode with disc buffer
 public class Executor {
 
     static String[] lines;
     static StringBuilder resultBuilder;
-    static int TAB_LENGTH;
-    static JLabel processLabel;
-    static JLabel progressLabel;
     static boolean skipArrayReset = false;
 
-    static void execute(List<ExecutionOption> options, Path path, boolean saveToCopy) {
-        getIndentation();
-        if (TAB_LENGTH <= 0) {
-            JOptionPane.showMessageDialog(null, "Valid indentation length is required to proceed.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
+    static int TAB_LENGTH;
+    static String interruptionFunction;
+    static String arrayInitFunction;
 
+    static void execute(List<ExecutionOption> options, Path path, boolean saveToCopy) {
         prepareData(path);
 
+        System.out.println("Preparing for execution...");
+
+        getIndentation();
+        if (TAB_LENGTH <= 0) return;
+
         for (ExecutionOption option : options) {
-            if (option.enabled) {
-                option.runnable.run();
+            if (option.enabled && option.preparation != null) {
+                option.preparation.run();
+                ProgressTracker.reset();
+            }
+        }
+
+        for (ExecutionOption option : options) {
+            if (option.enabled && option.execution != null) {
+                option.execution.run();
                 resetLineArray();
                 ProgressTracker.reset();
             }
@@ -89,13 +95,25 @@ public class Executor {
     }
 
     private static void getIndentation() {
-        String tabLengthString = JOptionPane.showInputDialog(null, "Enter indent (tab) length:");
+        String tabLengthString = JOptionPane.showInputDialog(null, "Enter indent (tab) length.\n\nLeave empty for auto-detection.");
 
-        try {
-            TAB_LENGTH = Integer.parseInt(tabLengthString);
+        if (tabLengthString.isEmpty()) {
+            for (String line : lines) {
+                if (!line.isEmpty() && line.charAt(0) == ' ' && !line.contains("\\")) {
+                    TAB_LENGTH = skipWhile(line, 0, ' ');
+                    System.out.println("Using tab length: " + TAB_LENGTH);
+                    break;
+                }
+            }
         }
-        catch (NumberFormatException e) {
-            TAB_LENGTH = -1;
+        else {
+            try {
+                TAB_LENGTH = Integer.parseInt(tabLengthString);
+            }
+            catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(null, "Valid indentation length is required to proceed.", "Error", JOptionPane.ERROR_MESSAGE);
+                TAB_LENGTH = -1;
+            }
         }
     }
 
@@ -112,7 +130,7 @@ public class Executor {
     }
 
     static void removeUselessDecompilerComments() {
-        System.out.print("Removing compilator comments...    ");
+        System.out.print("Removing decompilator comments...    ");
 
         for (String line : lines) {
             ProgressTracker.progress();
@@ -348,7 +366,7 @@ public class Executor {
                 i++;
                 continue;
             }
-            //realistically should never fall out of bounds
+            //realistically should never fall out of bounds anywhere
             if (lines[i].contains("il2cpp_runtime_class_init")) {
                 previous = lines[i - 1];
                 next = lines[i + 1];
@@ -364,22 +382,58 @@ public class Executor {
         ProgressTracker.end();
     }
 
-    static void simplifyProcedureInterruptions() {
-        System.out.print("Simplifying procedure interruptions (step 1)...    ");
-
-        // REPLACING INTERRUPTION FUNCTION WITH 'return' //
-        String interruptionFunction = JOptionPane.showInputDialog(null,
+    static void simplifyProcedureInterruptions$prepare() {
+        interruptionFunction = JOptionPane.showInputDialog(null,
                 """
                         Enter the name of a targeted procedure interruption function.
                         It appears at the bottom of void functions (don't look at "FUN_"
                         or Unity/other library functions) after "Subroutine does not return"
-                        warnings, usually formatted as FUN_*********.
+                        warnings, formatted as FUN_*********.
+                        
+                        Leave empty for auto-detection.
                         """);
-        if (interruptionFunction.length() < 13 || !interruptionFunction.substring(0, 13).matches("FUN_[0-9a-z]{9}")) {
-            JOptionPane.showMessageDialog(null, "Invalid function name, skipping current procedure.", "Warning", JOptionPane.WARNING_MESSAGE);
+        if (interruptionFunction.isEmpty()) { //auto-detect
+            System.out.print("Finding procedure interruption function name...    ");
+
+            Map<String, Integer> map = new HashMap<>();
+            String previous = "";
+            int pos;
+
+            for (String line : lines) {
+                ProgressTracker.progress();
+
+                if (!line.isEmpty()) {
+                    if (line.charAt(0) == '}') {
+                        pos = skipWhile(previous, 0, ' ');
+                        if (textAfterEquals(previous, pos, "FUN_")) {
+                            map.merge(previous.substring(pos, pos + 13), 1, Integer::sum);
+                        }
+                    }
+                }
+                previous = line;
+            }
+            interruptionFunction = map.entrySet().stream()
+                    .max(Comparator.comparingInt(Map.Entry::getValue))
+                    .map(Map.Entry::getKey).orElse("");
+            if (interruptionFunction.isEmpty()) System.out.println("Failed to auto-detect function name");
+            else System.out.println("Selected function name: " + interruptionFunction);
+
+        }
+        else if (interruptionFunction.length() < 13 || !interruptionFunction.substring(0, 13).matches("FUN_[0-9a-z]{9}")) {
+            JOptionPane.showMessageDialog(null, "Invalid function name, procedure will be skipped.", "Warning", JOptionPane.WARNING_MESSAGE);
+            interruptionFunction = "";
+        }
+    }
+
+    static void simplifyProcedureInterruptions() {
+        System.out.print("Simplifying procedure interruptions (step 1)...    ");
+
+        if (interruptionFunction.isEmpty()) {
             skipArrayReset = true;
             return;
         }
+
+        // REPLACING INTERRUPTION FUNCTION WITH 'return' //
         for (String line : lines) {
             ProgressTracker.progress();
             if (line.isEmpty()) {
@@ -598,7 +652,8 @@ public class Executor {
 
                         for (int i = 1; i < blockContent.size(); i++) {
                             String blockLine = blockContent.get(i);
-                            if (!blockLine.isEmpty()) {
+                            if (blockLine.isEmpty()) appendEmpty();
+                            else {
                                 if (blockContent.get(i).charAt(0) == ' ') appendWithNewLine(blockContent.get(i).substring(TAB_LENGTH));
                                 else appendWithNewLine(blockContent.get(i));
                             }
@@ -783,10 +838,8 @@ public class Executor {
         }
     }
 
-    static void simplifyArrayAccess() {
-        System.out.print("Simplifying array access...    ");
-
-        String initializationFunction = JOptionPane.showInputDialog(null,
+    static void simplifyArrayAccess$prepare() {
+        arrayInitFunction = JOptionPane.showInputDialog(null,
                 """
                         Enter the name of an array initialization function.
                         Array initialization is usually structured like this:
@@ -795,14 +848,49 @@ public class Executor {
                         
                         Array operations can be found in code by searching for
                         "m_Items[0]"
+                        
+                        Leave empty for auto-detection.
                         """);
-        if (initializationFunction.length() < 13 || !initializationFunction.substring(0, 13).matches("FUN_[0-9a-z]{9}")) {
-            JOptionPane.showMessageDialog(null, "Invalid function name, skipping current procedure.", "Warning", JOptionPane.WARNING_MESSAGE);
+        if (arrayInitFunction.isEmpty()) { //auto-detect
+            System.out.print("Finding array initialization function name...    ");
+
+            Map<String, Integer> map = new HashMap<>();
+            Matcher matcher = Pattern.compile("= (FUN_.........)\\([^,]*TypeInfo,\\d+\\);$").matcher("");
+
+            for (String line : lines) {
+                ProgressTracker.progress();
+
+                if (!line.isEmpty()) {
+                    //a cheap (?) line skip to avoid using regex?
+                    if (line.indexOf("FUN", TAB_LENGTH + 4) != -1 && line.indexOf("TypeInfo", TAB_LENGTH + 17) != -1) {
+                        matcher.reset(line);
+                        if (matcher.find()) {
+                            map.merge(matcher.group(1), 1, Integer::sum);
+                        }
+                    }
+                }
+            }
+            arrayInitFunction = map.entrySet().stream()
+                    .max(Comparator.comparingInt(Map.Entry::getValue))
+                    .map(Map.Entry::getKey).orElse("");
+            if (arrayInitFunction.isEmpty()) System.out.println("Failed to auto-detect function name");
+            else System.out.println("Selected function name: " + arrayInitFunction);
+        }
+        else if (arrayInitFunction.length() < 13 || !arrayInitFunction.substring(0, 13).matches("FUN_[0-9a-z]{9}")) {
+            JOptionPane.showMessageDialog(null, "Invalid function name, procedure will be skipped.", "Warning", JOptionPane.WARNING_MESSAGE);
+            arrayInitFunction = "";
+        }
+    }
+
+    static void simplifyArrayAccess() {
+        System.out.print("Simplifying array access...    ");
+
+        if (arrayInitFunction.isEmpty()) {
             skipArrayReset = true;
             return;
         }
 
-        Matcher matcher = Pattern.compile("^( *[^ ]+ = )" + initializationFunction + "\\((.+)___TypeInfo,(.*)\\);$").matcher("");
+        Matcher matcher = Pattern.compile("^( *[^ ]+ = )" + arrayInitFunction + "\\((.+)___TypeInfo,(.*)\\);$").matcher("");
         for (String line : lines) {
             ProgressTracker.progress();
             if (line.isEmpty()) {
@@ -823,6 +911,7 @@ public class Executor {
         }
     }
 
+    //todo remove type parameter count collection
     //horrifying
     static void formatGenericTypes() {
         System.out.print("Formatting generic types (step 1)...    ");
@@ -1034,6 +1123,7 @@ public class Executor {
                 }
             }
         }
+        //noinspection UnusedAssignment
         goodTypeTokens = null;
 
         ProgressTracker.set(60);
@@ -1060,6 +1150,7 @@ public class Executor {
         for (String badType : badTypes) {
             typesWithArgs.put(badType, Integer.MAX_VALUE);
         }
+        //noinspection UnusedAssignment
         badTypes = null;
 
         ProgressTracker.set(80);

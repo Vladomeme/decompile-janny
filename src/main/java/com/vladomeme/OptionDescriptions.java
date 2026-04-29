@@ -2,14 +2,14 @@ package com.vladomeme;
 
 public class OptionDescriptions {
 
-    public static String removeUselessDecompilerComments = """
+    public static final String removeUselessDecompilerComments = """
             Removes these comments from decompiled code:
             
                 // DISPLAY WARNING: Type casts are NOT being printed
                 // WARNING: Subroutine does not return
             """;
 
-    public static String removeNullPointerTypeCasts = """
+    public static final String removeNullPointerTypeCasts = """
             Replaces null value casts to different types with a 'NULL'.
             Useful it you forgot to turn this option on in Ghidra.
             
@@ -18,7 +18,7 @@ public class OptionDescriptions {
                 (UnityEngine_GameObject_o *)0x0 => NULL
             """;
 
-    public static String removeMethodInitialization = """
+    public static final String removeMethodInitialization = """
             Removes method initialization blocks:
             
             Examples:
@@ -39,7 +39,7 @@ public class OptionDescriptions {
                 }
             """;
 
-    public static String removeStaticInitialization = """
+    public static final String removeStaticInitialization = """
             Removes static member initialization blocks. Rare blocks
             containing additional logic are unaffected.
             
@@ -53,7 +53,7 @@ public class OptionDescriptions {
                 }
             """;
 
-    public static String simplifyProcedureInterruptions = """
+    public static final String simplifyProcedureInterruptions = """
             Simplifies procedure interruption functions and goto label
             instructions by replacing them with direct 'return' statements.
             Additionally, removes unnecessary void return statements,
@@ -91,7 +91,7 @@ public class OptionDescriptions {
             }
             """;
 
-    public static String simplifyObjectReferences = """
+    public static final String simplifyObjectReferences = """
             Improves readability for object references and method calls.
             Removes unnecessary parentheses.
             
@@ -113,7 +113,7 @@ public class OptionDescriptions {
                 __this_01.name
             """;
 
-    public static String replaceNullChecks = """
+    public static final String replaceNullChecks = """
             Replaces (mostly) auto-generated null checks with marker comments,
             removing block indentation. Preserves if blocks with return statements.
             
@@ -139,7 +139,7 @@ public class OptionDescriptions {
                 }
             """;
 
-    public static String removeArrayBoundChecks = """
+    public static final String removeArrayBoundChecks = """
             Removes (mostly) auto-generated array bound checks.
             
             Targeted if block header examples:
@@ -148,7 +148,7 @@ public class OptionDescriptions {
                 if (2 < items.max_length) {
             """;
 
-    public static String simplifyArrayAccess = """
+    public static final String simplifyArrayAccess = """
             Simplifies array initialization and element access.
             
             Before:
@@ -164,15 +164,16 @@ public class OptionDescriptions {
                 pSVar1[2] = String3;
             """;
 
-    public static String formatGenericTypes = """
+    public static final String formatGenericTypes = """
             Puts generic type arguments in angle brackets if they're missing.
-            Result might be incomplete for rarely occurring types.
+            Formatting might be incorrect or incomplete for rare types.
+            May additionally produce code gore.
             
             Fungus_VariableBase_Vector3_ => Fungus_VariableBase<Vector3>
             System.Collections.Generic.List_Command_ => System.Collections.Generic.List<Command>
             """;
 
-    public static String replaceUnderscoresForMethods = """
+    public static final String replaceUnderscoresForMethods = """
             Actual method names will be separated from the class name with a
             dot instead of underscores (in both declarations and calls).
             
