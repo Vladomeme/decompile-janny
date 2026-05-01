@@ -383,6 +383,7 @@ public class Executor {
         ProgressTracker.end();
     }
 
+    //todo improve to check function signature
     static void simplifyProcedureInterruptions$prepare() {
         interruptionFunction = JOptionPane.showInputDialog(null,
                 """
@@ -798,7 +799,8 @@ public class Executor {
 
         boolean inBlock = false;
         Stack<String> blockEnds = new Stack<>();
-        Matcher headerMatcher = Pattern.compile("^( *)if \\((?:\\d+ < [^-.]+(?:->|.)max_length|[^-.]+(?:->|.)max_length != 0)\\) \\{$").matcher("");
+        Matcher headerMatcher = Pattern.compile("^( *)if \\((?:\\d+ < [^-.]+(?:->|\\.)max_length|[^-.]+(?:->|\\.)max_length != 0)\\) \\{$").matcher("");
+        Matcher inlineMatcher = Pattern.compile("^( *)if \\((?:[^-.\\n]+(?:->|\\.)max_length == 0|[^-.\\n]+(?:->|\\.)max_length < \\d+)\\) return;$").matcher("");
 
         for (String line : lines) {
             ProgressTracker.progress();
@@ -821,8 +823,11 @@ public class Executor {
                 }
                 //normal line
                 else {
-                    if (line.charAt(0) == ' ') appendWithNewLine(line.substring(TAB_LENGTH * blockEnds.size()));
-                    else appendWithNewLine(line);
+                    inlineMatcher.reset(line);
+                    if (!inlineMatcher.find()) {
+                        if (line.charAt(0) == ' ') appendWithNewLine(line.substring(TAB_LENGTH * blockEnds.size()));
+                        else appendWithNewLine(line);
+                    }
                 }
             }
             else {
@@ -834,7 +839,10 @@ public class Executor {
                         blockEnds.push(headerMatcher.group(1) + '}');
                     }
                 }
-                else appendWithNewLine(line);
+                else {
+                    inlineMatcher.reset(line);
+                    if (!inlineMatcher.find()) appendWithNewLine(line);
+                }
             }
         }
     }
@@ -1281,7 +1289,7 @@ public class Executor {
                     }
                     else appendWithNewLine(line);
                 }
-                catch (Exception e) {;
+                catch (Exception e) {
                     throw new RuntimeException(e);
                 }
             }
@@ -1296,9 +1304,9 @@ public class Executor {
                         It represents the amount of method calls that can have a
                         value that is not explicitly NULL as an argument.
                         
-                        Leave empty to use the default threshold (0.005).
+                        Leave empty to use the default threshold (0.5).
                         """);
-        if (input.isEmpty()) methodInfoThreshold = 0.005f;
+        if (input.isEmpty()) methodInfoThreshold = 0.5f;
         else {
             try {
                 methodInfoThreshold = Float.parseFloat(input);
@@ -1378,6 +1386,7 @@ public class Executor {
                                     blockCount--;
                                     if (blockCount == 0 && !textBeforeEquals(line, pos - 1, "NULL")) {
                                         ints[1]++;
+                                        break;
                                     }
                                 }
                                 if (c == '(') blockCount++;
@@ -1396,7 +1405,7 @@ public class Executor {
         ProgressTracker.reset();
 
         //remove all methods that exceed the threshold
-        methods.entrySet().removeIf(entry -> (float) entry.getValue()[1] / entry.getValue()[0] > methodInfoThreshold);
+        methods.entrySet().removeIf(entry -> entry.getValue()[0] != 0 && (float) entry.getValue()[1] / entry.getValue()[0] > methodInfoThreshold);
 
         System.out.print("Removing useless MethodInfo arguments (part 3)...    ");
 
@@ -1492,7 +1501,7 @@ public class Executor {
     private static boolean isFunctionHeader(String line) {
         char c = line.charAt(0);
         return line.length() > 3 && (c != ' ' && c != '/' && c != '}'
-                && c != 'L' && line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'
+                && (c != 'L' || (line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'))
                 && line.charAt(line.length() - 1) == '{' && line.charAt(line.length() - 3) == ')');
     }
 
@@ -1537,6 +1546,7 @@ public class Executor {
         return pos;
     }
 
+    @SuppressWarnings("SameParameterValue")
     private static int skipUntil(String line, int pos, char c) {
         int index = line.indexOf(c, pos);
         return index != -1 ? index : line.length();
