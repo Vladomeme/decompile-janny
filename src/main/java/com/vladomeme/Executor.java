@@ -25,6 +25,7 @@ public class Executor {
     static int TAB_LENGTH;
     static String interruptionFunction;
     static String arrayInitFunction;
+    static float methodInfoThreshold;
 
     static void execute(List<ExecutionOption> options, Path path, boolean saveToCopy) {
         prepareData(path);
@@ -911,7 +912,6 @@ public class Executor {
         }
     }
 
-    //todo remove type parameter count collection
     //horrifying
     static void formatGenericTypes() {
         System.out.print("Formatting generic types (step 1)...    ");
@@ -1289,6 +1289,190 @@ public class Executor {
         }
     }
 
+    static void removeMethodInfoArgument$prepare() {
+        String input = JOptionPane.showInputDialog(null,
+                """
+                        Enter the MethodInfo argument removal threshold.
+                        It represents the amount of method calls that can have a
+                        value that is not explicitly NULL as an argument.
+                        
+                        Leave empty to use the default threshold (0.005).
+                        """);
+        if (input.isEmpty()) methodInfoThreshold = 0.005f;
+        else {
+            try {
+                methodInfoThreshold = Float.parseFloat(input);
+            }
+            catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(null, "Failed to parse threshold, procedure will be skipped.", "Warning", JOptionPane.WARNING_MESSAGE);
+                methodInfoThreshold = -67;
+            }
+        }
+    }
+
+    //todo overloaded methods? use argument counts for relatively cheap distinction
+    static void removeMethodInfoArgument() {
+        System.out.print("Removing useless MethodInfo arguments (part 1)...    ");
+
+        if (methodInfoThreshold == -67) {
+            skipArrayReset = true;
+            return;
+        }
+
+        // FINDING ALL METHODS WITH MethodInfo ARGUMENTS //
+        int index;
+        char c;
+        Map<String, int[]> methods = new HashMap<>(1000);
+
+        loop:
+        for (String line : lines) {
+            ProgressTracker.progress();
+
+            if (line.isEmpty()) continue;
+
+            if (isFunctionHeader(line)) {
+                index = line.lastIndexOf("MethodInfo");
+                if (index == -1) continue;
+
+                while (index != line.length()) {
+                    c = line.charAt(index);
+                    if (c == ',') continue loop;
+                    if (c == ')') {
+                        methods.putIfAbsent(line.substring(skipWhile(line, line.indexOf(' '), ' ', '*'), line.indexOf('(')), new int[]{0, 0});
+                        break;
+                    }
+                    index++;
+                }
+            }
+        }
+        ProgressTracker.reset();
+
+        System.out.print("Removing useless MethodInfo arguments (part 2)...    ");
+
+        int pos;
+        int[] ints;
+        int blockCount;
+        String name;
+
+        // REMOVING METHODS THAT HAVE NON-NULL MethodInfo ARGUMENTS USED FROM LIST //
+        for (String line : lines) {
+            ProgressTracker.progress();
+
+            if (line.isEmpty() || line.charAt(0) != ' ') continue;
+
+            index = line.indexOf('(');
+            while (index != -1) {
+                pos = index - 1;
+                blockCount = 0;
+                while (pos != -1) {
+                    c = line.charAt(pos);
+                    if (c == ' ' || c == '(' || c == ')' || c == '*' || c == '&' || c == '-' || (c == ',' && blockCount == 0)) {
+                        ints = methods.get(line.substring(pos + 1, index));
+                        if (ints != null) {
+                            ints[0]++;
+                            blockCount = 1;
+                            pos = index + 1;
+                            while (pos != line.length()) {
+                                c = line.charAt(pos);
+                                if (c == ')') {
+                                    blockCount--;
+                                    if (blockCount == 0 && !textBeforeEquals(line, pos - 1, "NULL")) {
+                                        ints[1]++;
+                                    }
+                                }
+                                if (c == '(') blockCount++;
+                                pos++;
+                            }
+                        }
+                        break;
+                    }
+                    if (c == '>') blockCount++;
+                    if (c == '<') blockCount--;
+                    pos--;
+                }
+                index = line.indexOf('(', index + 1);
+            }
+        }
+        ProgressTracker.reset();
+
+        //remove all methods that exceed the threshold
+        methods.entrySet().removeIf(entry -> (float) entry.getValue()[1] / entry.getValue()[0] > methodInfoThreshold);
+
+        System.out.print("Removing useless MethodInfo arguments (part 3)...    ");
+
+        int backPos;
+
+        // REMOVING ARGUMENTS FROM LEFTOVER METHODS & THEIR USES //
+        for (String line : lines) {
+            ProgressTracker.progress();
+
+            if (line.isEmpty()) {
+                appendEmpty();
+                continue;
+            }
+
+            //function header
+            if (isFunctionHeader(line)) {
+                if (!methods.containsKey(line.substring(skipWhile(line, line.indexOf(' '), ' ', '*'), line.indexOf('(')))) {
+                    appendWithNewLine(line);
+                    continue;
+                }
+
+                index = line.lastIndexOf("MethodInfo");
+                if (index == -1) { //shouldn't happen but just in case
+                    appendWithNewLine(line);
+                    continue;
+                }
+
+                if (line.charAt(index - 1) == ',') index--;
+
+                appendWithNewLine(line.substring(0, index) + ") {");
+            }
+            //other lines
+            else {
+                if (line.charAt(0) != ' ') {
+                    appendWithNewLine(line);
+                    continue;
+                }
+
+                index = line.indexOf('(');
+                while (index != -1) {
+                    pos = index - 1;
+                    blockCount = 0;
+                    while (pos != -1) {
+                        c = line.charAt(pos);
+                        if (c == ' ' || c == '(' || c == ')' || c == '*' || c == '&' || c == '-' || (c == ',' && blockCount == 0)) {
+                            name = line.substring(pos + 1, index);
+                            if (methods.containsKey(name)) {
+                                blockCount = 1;
+                                pos = index + 1;
+                                while (pos != line.length()) {
+                                    c = line.charAt(pos);
+                                    if (c == ')') {
+                                        blockCount--;
+                                        if (blockCount == 0 && textBeforeEquals(line, pos - 1, "NULL")) {
+                                            backPos = line.charAt(pos - 5) == ',' ? pos - 5 : pos - 4;
+                                            line = line.substring(0, backPos) + line.substring(pos);
+                                            break;
+                                        }
+                                    }
+                                    if (c == '(') blockCount++;
+                                    pos++;
+                                }
+                            }
+                            break;
+                        }
+                        if (c == '>') blockCount++;
+                        if (c == '<') blockCount--;
+                        pos--;
+                    }
+                    index = line.indexOf('(', index + 1);
+                }
+                appendWithNewLine(line);
+            }
+        }
+    }
+
     static void replaceUnderscoresForMethods() {
         System.out.print("Replacing underscores for methods...    ");
 
@@ -1306,9 +1490,10 @@ public class Executor {
     }
 
     private static boolean isFunctionHeader(String line) {
-        return line.length() < 3 || (line.charAt(0) != ' ' && line.charAt(0) != '/' && line.charAt(0) != '}'
-                && line.charAt(0) != 'L' && line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'
-                && line.charAt(line.length() - 1) == '{');
+        char c = line.charAt(0);
+        return line.length() > 3 && (c != ' ' && c != '/' && c != '}'
+                && c != 'L' && line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'
+                && line.charAt(line.length() - 1) == '{' && line.charAt(line.length() - 3) == ')');
     }
 
     private static boolean textAfterEquals(String line, int pos, String text) {
@@ -1336,9 +1521,25 @@ public class Executor {
         return pos;
     }
 
-    private static int skipUntil(String line, int pos, char c) {
-        while (pos != line.length() && line.charAt(pos) != c) pos++;
+    private static int skipWhile(String line, int pos, char... chars) {
+        char current;
+        loop:
+        while (pos != line.length()) {
+            current = line.charAt(pos);
+            for (char c : chars) {
+                if (c == current) {
+                    pos++;
+                    continue loop;
+                }
+            }
+            break;
+        }
         return pos;
+    }
+
+    private static int skipUntil(String line, int pos, char c) {
+        int index = line.indexOf(c, pos);
+        return index != -1 ? index : line.length();
     }
 
     private static int skipUntil(String line, int pos, char... chars) {

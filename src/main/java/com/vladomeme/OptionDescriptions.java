@@ -173,6 +173,13 @@ public class OptionDescriptions {
             System.Collections.Generic.List_Command_ => System.Collections.Generic.List<Command>
             """;
 
+    public static final String removeMethodInfoArguments = """
+            Removes MethodInfo argument from functions and their calls
+            if only NULL is used as an argument.
+            
+            
+            """;
+
     public static final String replaceUnderscoresForMethods = """
             Actual method names will be separated from the class name with a
             dot instead of underscores (in both declarations and calls).

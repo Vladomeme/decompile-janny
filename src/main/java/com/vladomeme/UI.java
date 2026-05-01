@@ -160,6 +160,9 @@ public class UI extends JFrame {
         options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::formatGenericTypes,
                 "Format generic types", OptionDescriptions.formatGenericTypes));
 
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeMethodInfoArgument$prepare, Executor::removeMethodInfoArgument,
+                "Remove useless MethodInfo arguments", OptionDescriptions.removeMethodInfoArguments));
+
         options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::replaceUnderscoresForMethods,
                 "Replace underscores for methods", OptionDescriptions.replaceUnderscoresForMethods));
 
