@@ -54,14 +54,15 @@ public class Executor {
         try {
             System.out.println("Writing...");
 
-            //todo append _output before extension
-            BufferedWriter writer = new BufferedWriter(new FileWriter(new File(Path.of(path + (saveToCopy ? "_output" : "")).toUri())));
+            //todo use file save dialogue?
+            if (saveToCopy) path = getNewFilePath(path);
+            BufferedWriter writer = new BufferedWriter(new FileWriter(new File(path.toUri())));
             for (String line : lines) {
                 writer.write(line);
                 writer.newLine();
             }
             System.out.println("Finished!");
-            JOptionPane.showMessageDialog(null, "All operations are completed.\nSaved to: " + path + (saveToCopy ? "_output" : ""),
+            JOptionPane.showMessageDialog(null, "All operations are completed.\nSaved to: " + path,
                     "Finished!", JOptionPane.INFORMATION_MESSAGE);
         }
         catch (IOException e) {
@@ -71,6 +72,12 @@ public class Executor {
         lines = null;
         resultBuilder = null;
         TAB_LENGTH = 0;
+    }
+
+    private static Path getNewFilePath(Path path) {
+        String s = path.toString();
+        int index = s .indexOf('.');
+        return Path.of(s.substring(0, index) + "_output" + s.substring(index));
     }
 
     private static void prepareData(Path path) {
