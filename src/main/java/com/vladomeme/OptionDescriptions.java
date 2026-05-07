@@ -180,6 +180,19 @@ public class OptionDescriptions {
             
             """;
 
+    public static final String removeObjectAllocations = """
+            Removes function calls for object memory allocations, replacing
+            them directly with constructors, which are usually located right
+            after in the code.
+            
+            Before:
+                __this_02 = thunk_FUN_1802cae60(UnityEngine_WaitForSecondsRealtime_TypeInfo);
+                UnityEngine_WaitForSecondsRealtime___ctor(__this_02,(1.0 / iVar6) * 3.0);
+            
+            After:
+                __this_02 = new UnityEngine_WaitForSecondsRealtime((1.0 / iVar6) * 3.0);
+            """;
+
     public static final String replaceUnderscoresForMethods = """
             Actual method names will be separated from the class name with a
             dot instead of underscores (in both declarations and calls).

@@ -11,11 +11,11 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-//todo eliminate methodInfo arguments
 //todo move opening angle brackets to the same line
 //todo ghidra decompile settings warning
 //todo procedure order dependence warning
 //todo low memory mode with disc buffer
+//todo resolve false .klass and .monitor pointers (look up object vtables?)
 public class Executor {
 
     static String[] lines;
@@ -26,6 +26,7 @@ public class Executor {
     static String interruptionFunction;
     static String arrayInitFunction;
     static float methodInfoThreshold;
+    static String objectInitFunction;
 
     static void execute(List<ExecutionOption> options, Path path, boolean saveToCopy) {
         prepareData(path);
@@ -53,6 +54,7 @@ public class Executor {
         try {
             System.out.println("Writing...");
 
+            //todo append _output before extension
             BufferedWriter writer = new BufferedWriter(new FileWriter(new File(Path.of(path + (saveToCopy ? "_output" : "")).toUri())));
             for (String line : lines) {
                 writer.write(line);
@@ -551,7 +553,9 @@ public class Executor {
 
         Matcher fieldsMatcher = Pattern.compile("[*&]*\\(([^(]*)\\.fields\\)").matcher("");
         Matcher structureMatcher = Pattern.compile("[*&]*\\(([^ ()-]*)\\.(?:klass\\.vtable|fields)\\)").matcher("");
+        @SuppressWarnings("RegExpSuspiciousBackref")
         Matcher ptr1Matcher = Pattern.compile("\\((([^.\\n\\r]*)\\._\\d*?_([a-zA-Z0-9_]*)\\.method)Ptr\\)\\((?:\\2,)?((?:.*?\\(.*?\\),|.*?,)*)\\1?\\)").matcher("");
+        @SuppressWarnings("RegExpSuspiciousBackref")
         Matcher ptr2Matcher = Pattern.compile("\\((([^.\\n\\r]*)\\._\\d*?_([a-zA-Z0-9_]*)\\.method)Ptr\\)\\(\\2\\)").matcher("");
         Matcher klassMatcher = Pattern.compile("[*&]*\\(([^().]*)\\.(?:_\\d*|klass)?\\)(?=\\.)").matcher("");
         Matcher parenthesisMatcher = Pattern.compile("[*&]*\\(([^().]*\\.[^)]*)\\)(?=\\.)").matcher("");
@@ -1362,7 +1366,7 @@ public class Executor {
         int blockCount;
         String name;
 
-        // REMOVING METHODS THAT HAVE NON-NULL MethodInfo ARGUMENTS USED FROM LIST //
+        // COUNTING METHOD USES AND REMOVING METHODS THAT HAVE NON-NULL MethodInfo ARGUMENTS USED FROM LIST //
         for (String line : lines) {
             ProgressTracker.progress();
 
@@ -1482,6 +1486,207 @@ public class Executor {
         }
     }
 
+    static void removeObjectAllocations$prepare() {
+        objectInitFunction = JOptionPane.showInputDialog(null,
+                """
+                        Enter the name of the object allocation function.
+                        It's usually called before object constructors (_ctor)
+                        with a single TypeInfo argument.
+                        
+                        Leave empty for auto-detection.
+                        """);
+        if (objectInitFunction.isEmpty()) { //auto-detect
+            System.out.print("Finding object allocation function name...    ");
+
+            Map<String, Integer> map = new HashMap<>();
+            Matcher matcher = Pattern.compile("((?:thunk_)?FUN_.........)\\([^(),]+?(?:<.*>)?[^(),]*_TypeInfo\\)").matcher("");
+
+            for (String line : lines) {
+                ProgressTracker.progress();
+
+                if (!line.isEmpty()) {
+                    //a cheap (?) line skip to avoid using regex?
+                    if (line.indexOf("FUN", TAB_LENGTH + 4) != -1 && line.indexOf("TypeInfo", TAB_LENGTH + 17) != -1) {
+                        matcher.reset(line);
+                        if (matcher.find()) {
+                            map.merge(matcher.group(1), 1, Integer::sum);
+                        }
+                    }
+                }
+            }
+            objectInitFunction = map.entrySet().stream()
+                    .max(Comparator.comparingInt(Map.Entry::getValue))
+                    .map(Map.Entry::getKey).orElse("");
+            if (objectInitFunction.isEmpty()) System.out.println("Failed to auto-detect function name");
+            else System.out.println("Selected function name: " + objectInitFunction);
+        }
+        else if (objectInitFunction.length() < 13 || !objectInitFunction.substring(0, objectInitFunction.charAt(0) == 't' ? 19 : 13).matches("(?:thunk_)?FUN_[0-9a-z]{9}")) {
+            JOptionPane.showMessageDialog(null, "Invalid function name, procedure will be skipped.", "Warning", JOptionPane.WARNING_MESSAGE);
+            objectInitFunction = "";
+        }
+    }
+
+    //todo get type from available information to substitute subtyped construction
+    /*
+    void JoinUsBlogItem___ctor(JoinUsBlogItem_o *__this,int32_t index,JoinUsBlog_o *mainBlog,JoinUsAuthor_o *author,int32_t commentScore,JoinUsBlogItem_o *joinUsBlogItem,int32_t depth) {
+        System_Configuration_ConfigurationCollectionAttribute___ctor(__this,NULL,mainBlog);
+        __this._Depth_k__BackingField = depth;
+        __this._CommentScore_k__BackingField = commentScore;
+        __this.Index = index;
+        __this.Author = author;
+        __this._ReplyTo_k__BackingField = joinUsBlogItem;
+        __this.MainBlog = mainBlog;
+    }
+     */
+
+    static void removeObjectAllocations() {
+        System.out.print("Removing object allocations...    ");
+
+        if (objectInitFunction.isEmpty()) {
+            skipArrayReset = true;
+            return;
+        }
+
+        boolean inBlock = false;
+        int blockLinePos = 0; //redundant init?
+        int index;
+        int pos;
+        int argsPos;
+        int braceCount;
+        char c;
+        Integer allocationPos;
+        String variableName;
+        String type;
+
+        StringBuilder builder = new StringBuilder(200);
+        List<String> methodLines = new ArrayList<>();
+        Map<String, Integer> allocationPositions = new HashMap<>();
+        Map<String, String> allocationTypes = new HashMap<>();
+
+        for (String line : lines) {
+            ProgressTracker.progress();
+            if (inBlock) {
+                blockLinePos++;
+
+                if (line.isEmpty()) {
+                    methodLines.add("");
+                    continue;
+                }
+                //method end
+                if (line.charAt(0) == '}') {
+                    inBlock = false;
+
+                    for (String methodLine : methodLines) {
+                        if (methodLine == null) continue;
+                        if (methodLine.isEmpty()) appendEmpty();
+                        else appendWithNewLine(methodLine);
+                    }
+                    methodLines.clear();
+                    allocationTypes.clear();
+                    allocationPositions.clear();
+
+                    appendWithNewLine(line);
+                    continue;
+                }
+                //allocation call
+                index = line.indexOf(objectInitFunction);
+                if (index != -1) {
+                    pos = skipWhile(line, 0, ' ');
+                    variableName = line.substring(pos, skipUntil(line, pos, ' '));
+
+                    allocationPositions.put(variableName, blockLinePos);
+                    allocationTypes.put(variableName, extractTypeFromAllocation(line));
+                    methodLines.add(line);
+                    continue;
+                }
+                //constructor call
+                index = line.indexOf("_ctor(");
+                if (index != -1) {
+                    pos = index + 6;
+                    argsPos = skipUntil(line, pos, ',', ')');
+                    variableName = null;
+                    if (pos == argsPos) { //constructor doesn't have a variable name; check if allocation is right above it
+                        for (Map.Entry<String, Integer> entry : allocationPositions.entrySet()) {
+                            if (entry.getValue() == blockLinePos - 1) {
+                                variableName = entry.getKey();
+                                break;
+                            }
+                        }
+                    }
+                    else variableName = line.substring(pos, argsPos);
+
+                    if (variableName == null) { //continue if constructor doesn't have a variable name or allocation right above it
+                        methodLines.add(line);
+                        continue;
+                    }
+
+                    allocationPos = allocationPositions.get(variableName);
+                    if (allocationPos != null) {
+                        builder.setLength(0);
+
+                        builder.append(line, 0, skipWhile(line, 0, ' ')); //indentation
+                        builder.append(variableName);
+                        builder.append(" = new ");
+
+                        type = allocationTypes.get(variableName);
+                        if (type != null) builder.append(allocationTypes.get(variableName));
+                        else builder.append(line, skipWhile(line, 0, ' '), index - 2);
+
+                        builder.append('(');
+
+                        if (line.charAt(argsPos) == ',') { //contructor args
+                            pos = argsPos + 1;
+                            braceCount = 0;
+                            while (pos != line.length()) {
+                                c = line.charAt(pos);
+
+                                if (c == '(') braceCount++;
+                                else if (c == ')') {
+                                    if (braceCount == 0) break;
+                                    braceCount--;
+                                }
+                                pos++;
+                            }
+                            builder.append(line, argsPos + 1, pos);
+                        }
+                        builder.append(");");
+
+                        if (allocationPos == -1) { //already allocated, reinitializing in-place
+                            methodLines.add(builder.toString());
+                        }
+                        else { //replace allocation call with the constructor call
+                            methodLines.set(allocationPos, builder.toString());
+                            methodLines.add(null);
+                        }
+                        allocationPositions.put(variableName, -1);
+                    }
+                    else methodLines.add(line);
+                    continue;
+                }
+                methodLines.add(line);
+            }
+            else {
+                if (line.isEmpty()) {
+                    appendEmpty();
+                    continue;
+                }
+                //check if current line is a function header
+                if (isFunctionHeader(line)) {
+                    inBlock = true;
+                    blockLinePos = -1;
+                }
+                appendWithNewLine(line);
+            }
+        }
+    }
+
+    private static String extractTypeFromAllocation(String line) {
+        if (line.contains("_TypeInfo"))
+            return line.substring(line.indexOf('(') + 1, line.indexOf("_TypeInfo"));
+        else return null;
+    }
+
+    //todo false positives -> 3153583
     static void replaceUnderscoresForMethods() {
         System.out.print("Replacing underscores for methods...    ");
 
