@@ -1636,7 +1636,7 @@ public class Executor {
                         builder.append(" = new ");
 
                         type = allocationTypes.get(variableName);
-                        if (type != null) builder.append(allocationTypes.get(variableName));
+                        if (type != null && pos != argsPos) builder.append(allocationTypes.get(variableName));
                         else builder.append(line, skipWhile(line, 0, ' '), index - 2);
 
                         builder.append('(');
