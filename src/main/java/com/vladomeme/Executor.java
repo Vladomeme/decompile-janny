@@ -1533,19 +1533,6 @@ public class Executor {
         }
     }
 
-    //todo get type from available information to substitute subtyped construction
-    /*
-    void JoinUsBlogItem___ctor(JoinUsBlogItem_o *__this,int32_t index,JoinUsBlog_o *mainBlog,JoinUsAuthor_o *author,int32_t commentScore,JoinUsBlogItem_o *joinUsBlogItem,int32_t depth) {
-        System_Configuration_ConfigurationCollectionAttribute___ctor(__this,NULL,mainBlog);
-        __this._Depth_k__BackingField = depth;
-        __this._CommentScore_k__BackingField = commentScore;
-        __this.Index = index;
-        __this.Author = author;
-        __this._ReplyTo_k__BackingField = joinUsBlogItem;
-        __this.MainBlog = mainBlog;
-    }
-     */
-
     static void removeObjectAllocations() {
         System.out.print("Removing object allocations...    ");
 
@@ -1556,19 +1543,12 @@ public class Executor {
 
         boolean inBlock = false;
         int blockLinePos = 0; //redundant init?
-        int index;
-        int pos;
-        int argsPos;
-        int braceCount;
-        char c;
-        Integer allocationPos;
-        String variableName;
-        String type;
 
         StringBuilder builder = new StringBuilder(200);
         List<String> methodLines = new ArrayList<>();
         Map<String, Integer> allocationPositions = new HashMap<>();
         Map<String, String> allocationTypes = new HashMap<>();
+        Map<String, String> signatureTypes = new HashMap<>();
 
         for (String line : lines) {
             ProgressTracker.progress();
@@ -1596,10 +1576,10 @@ public class Executor {
                     continue;
                 }
                 //allocation call
-                index = line.indexOf(objectInitFunction);
+                int index = line.indexOf(objectInitFunction);
                 if (index != -1) {
-                    pos = skipWhile(line, 0, ' ');
-                    variableName = line.substring(pos, skipUntil(line, pos, ' '));
+                    int pos = skipWhile(line, 0, ' ');
+                    String variableName = line.substring(pos, skipUntil(line, pos, ' '));
 
                     allocationPositions.put(variableName, blockLinePos);
                     allocationTypes.put(variableName, extractTypeFromAllocation(line));
@@ -1609,9 +1589,10 @@ public class Executor {
                 //constructor call
                 index = line.indexOf("_ctor(");
                 if (index != -1) {
-                    pos = index + 6;
-                    argsPos = skipUntil(line, pos, ',', ')');
-                    variableName = null;
+                    int pos = index + 6;
+                    int argsPos = skipUntil(line, pos, ',', ')');
+                    String variableName = null;
+                    //todo better variable-less allocation backtracking
                     if (pos == argsPos) { //constructor doesn't have a variable name; check if allocation is right above it
                         for (Map.Entry<String, Integer> entry : allocationPositions.entrySet()) {
                             if (entry.getValue() == blockLinePos - 1) {
@@ -1667,6 +1648,34 @@ public class Executor {
                         }
                         allocationPositions.put(variableName, -1);
                     }
+                    else if (signatureTypes.containsKey(variableName)) { //variable was passed as a function argument with no in-function allocation
+                        builder.setLength(0);
+
+                        builder.append(line, 0, skipWhile(line, 0, ' ')); //indentation
+                        builder.append(variableName);
+                        builder.append(" = new ");
+                        builder.append(signatureTypes.get(variableName));
+                        builder.append('(');
+
+                        if (line.charAt(argsPos) == ',') { //constructor args
+                            pos = argsPos + 1;
+                            int braceCount = 0;
+                            while (pos != line.length()) {
+                                char c = line.charAt(pos);
+
+                                if (c == '(') braceCount++;
+                                else if (c == ')') {
+                                    if (braceCount == 0) break;
+                                    braceCount--;
+                                }
+                                pos++;
+                            }
+                            builder.append(line, argsPos + 1, pos);
+                        }
+                        builder.append(");");
+
+                        methodLines.add(builder.toString());
+                    }
                     else methodLines.add(line);
                     continue;
                 }
@@ -1681,6 +1690,40 @@ public class Executor {
                 if (isFunctionHeader(line)) {
                     inBlock = true;
                     blockLinePos = -1;
+
+                    signatureTypes.clear();
+
+                    //getting a list of function argument variables with their types
+                    int argsPos = line.indexOf('(');
+                    if (argsPos != -1 && line.charAt(argsPos + 1) != ')') {
+                        while (line.charAt(argsPos) != ')') {
+                            //get type
+                            int pos = argsPos + 1;
+                            argsPos = skipUntil(line, pos, ' ');
+                            if (argsPos == line.length()) break;
+
+                            String type;
+                            if (line.charAt(argsPos - 1) > 96 && line.charAt(argsPos - 1) < 123 && line.charAt(argsPos - 2) == '_')
+                                type = line.substring(pos, argsPos - 2);
+                            else type = line.substring(pos, argsPos);
+
+                            //get variable type
+                            pos = skipWhile(line, argsPos, ' ', '*', '&');
+                            argsPos = pos;
+                            int braceCount = 0;
+                            while (argsPos != line.length()) {
+                                char c = line.charAt(argsPos);
+
+                                if (c == '<') braceCount++;
+                                else if (c == '>') braceCount--;
+                                else if (c == ')' || (c == ',' && braceCount == 0)) break;
+                                argsPos++;
+                            }
+                            if (argsPos == line.length()) break;
+
+                            signatureTypes.put(line.substring(pos, argsPos), type);
+                        }
+                    }
                 }
                 appendWithNewLine(line);
             }
