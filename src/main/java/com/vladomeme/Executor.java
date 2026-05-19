@@ -1490,7 +1490,7 @@ public class Executor {
         }
 
         boolean inBlock = false;
-        int blockLinePos = 0; //redundant init?
+        int blockLinePos = 0;
 
         StringBuilder builder = new StringBuilder(200);
         List<String> methodLines = new ArrayList<>();
@@ -1540,13 +1540,14 @@ public class Executor {
                     int pos = index + 6;
                     int argsPos = skipUntil(line, pos, ',', ')');
                     String variableName = null;
-                    //todo better variable-less allocation backtracking
-                    if (pos == argsPos) { //constructor doesn't have a variable name; check if allocation is right above it
-                        for (Map.Entry<String, Integer> entry : allocationPositions.entrySet()) {
-                            if (entry.getValue() == blockLinePos - 1) {
-                                variableName = entry.getKey();
-                                break;
+                    if (pos == argsPos) { //constructor doesn't have a variable name; check latest allocation
+                        if (!allocationPositions.isEmpty()) {
+                            Map.Entry<String, Integer> latest = null;
+                            for (Map.Entry<String, Integer> entry : allocationPositions.entrySet()) {
+                                if (latest == null) latest = entry;
+                                else if (entry.getValue() > latest.getValue()) latest = entry;
                             }
+                            variableName = latest.getKey();
                         }
                     }
                     else variableName = line.substring(pos, argsPos);
