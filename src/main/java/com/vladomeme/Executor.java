@@ -355,33 +355,58 @@ public class Executor {
         }
     }
 
-    //todo sort out weirdness
     static void removeStaticInitialization() {
         System.out.print("Removing static initialization blocks...    ");
 
-        int i = 1;
+        int i = 2;
+        boolean afterRemoval = false;
 
-        while (i != lines.length) {
+        loop:
+        while (i < lines.length) {
             ProgressTracker.progress();
 
             if (lines[i].isEmpty()) {
-                appendWithNewLine(lines[i - 1]);
+                if (!afterRemoval) appendWithNewLine(lines[i - 2]);
+                afterRemoval = false;
                 i++;
                 continue;
             }
             //realistically should never fall out of bounds anywhere
             if (lines[i].contains("il2cpp_runtime_class_init")) {
-                String previous = lines[i - 1];
-                String next = lines[i + 1];
-                if (!previous.isEmpty() && previous.charAt(previous.length() - 1) == '{'
-                        && !next.isEmpty() && next.charAt(next.length() - 1) == '}') {
-                    i += 3;
+                String previous1 = lines[i - 1];
+                String previous2 = lines[i - 2];
+                if (!previous1.isEmpty() && previous1.charAt(previous1.length() - 1) == '{') {
+                    int pos = i + 1;
+                    while (pos != lines.length && pos != i + 10) {
+                        String line = lines[pos];
+                        if (!line.isEmpty() && line.charAt(line.length() - 1) == '}') {
+                            i = pos + 2;
+                            appendWithNewLine(previous2);
+                            afterRemoval = true;
+                            continue loop;
+                        }
+                        pos++;
+                    }
+                }
+                else if (!previous2.isEmpty() && previous2.charAt(previous2.length() - 1) == '{') {
+                    int pos = i + 1;
+                    while (pos != lines.length && pos != i + 5) {
+                        String line = lines[pos];
+                        if (!line.isEmpty() && line.charAt(line.length() - 1) == '}') {
+                            i = pos + 2;
+                            afterRemoval = true;
+                            continue loop;
+                        }
+                        pos++;
+                    }
                 }
             }
-            appendWithNewLine(lines[i - 1]);
+            if (!afterRemoval) appendWithNewLine(lines[i - 2]);
+            afterRemoval = false;
             i++;
         }
         appendWithNewLine(lines[i - 1]);
+        appendWithNewLine(lines[i - 2]);
         ProgressTracker.end();
     }
 
