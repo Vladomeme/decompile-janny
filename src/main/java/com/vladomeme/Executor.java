@@ -61,6 +61,7 @@ public class Executor {
                 writer.write(line);
                 writer.newLine();
             }
+            writer.close();
             System.out.println("Finished!");
             JOptionPane.showMessageDialog(null, "All operations are completed.\nSaved to: " + path,
                     "Finished!", JOptionPane.INFORMATION_MESSAGE);
@@ -175,14 +176,8 @@ public class Executor {
 
         boolean inBlock = false;
         String blockEnd = null;
-        List<String> currentVariables = new ArrayList<>();
-
-        int pos;
-        int indentationPos;
-        int sanityPos;
-        int variablePos;
-        String variableName;
         String header = null;
+        List<String> currentVariables = new ArrayList<>();
 
         loop:
         for (String line : lines) {
@@ -216,8 +211,8 @@ public class Executor {
                         //checking if current line is a header of a null check if block
                         if (line.charAt(line.length() - 1) == '{') {
                             //skip indentation
-                            pos = skipWhile(line, 0, ' ');
-                            indentationPos = pos;
+                            int pos = skipWhile(line, 0, ' ');
+                            int indentationPos = pos;
 
                             if (!textAfterEquals(line, pos, "if (")) {
                                 appendWithNewLine(line);
@@ -227,14 +222,14 @@ public class Executor {
 
                             //getting variable name
                             pos = skipUntil(line, pos, ' ', ')');
-                            variablePos = pos;
+                            int variablePos = pos;
 
                             //check the rest of the header
                             pos++;
                             if (!textAfterEquals(line, pos, "== '\\0') {")) {
 
                                 //Not an inlined check, try to match with found variables
-                                variableName = line.substring(indentationPos + 4, variablePos);
+                                String variableName = line.substring(indentationPos + 4, variablePos);
 
                                 for (int i = 0; i != currentVariables.size(); i++) {
                                     if (currentVariables.get(i).equals(variableName)) {
@@ -257,15 +252,15 @@ public class Executor {
                         else {
                             //bVar10 = DAT_18340b0bf == '\0';
                             //check for un-inlined variable initialization
-                            pos = line.length() - 1;
+                            int pos = line.length() - 1;
                             if (textBeforeEquals(line, pos, "== '\\0';")) {
                                 pos -= 19;
                                 if (textBeforeEquals(line, pos, " = DAT")) {
-                                    sanityPos = pos - 5;
+                                    int sanityPos = pos - 5;
 
                                     //skip indentation
                                     pos = skipWhile(line, 0, ' ');
-                                    indentationPos = pos;
+                                    int indentationPos = pos;
 
                                     //getting variable name
                                     pos = skipUntil(line, pos, ' ');
@@ -295,8 +290,8 @@ public class Executor {
                 //checking if current line is a header of a null check if block
                 if (line.charAt(line.length() - 1) == '{') {
                     //skip indentation
-                    pos = skipWhile(line, 0, ' ');
-                    indentationPos = pos;
+                    int pos = skipWhile(line, 0, ' ');
+                    int indentationPos = pos;
 
                     //check 'if (' segment
                     if (!textAfterEquals(line, pos, "if (")) {
@@ -307,14 +302,14 @@ public class Executor {
 
                     //getting variable name
                     pos = skipUntil(line, pos, ' ', ')');
-                    variablePos = pos;
+                    int variablePos = pos;
 
                     //check the rest of the header
                     pos++;
                     if (!textAfterEquals(line, pos, "== '\\0') {")) {
 
                         //Not an inlined check, try to match with found variables
-                        variableName = line.substring(indentationPos + 4, variablePos);
+                        String variableName = line.substring(indentationPos + 4, variablePos);
 
                         for (int i = 0; i != currentVariables.size(); i++) {
                             if (currentVariables.get(i).equals(variableName)) {
@@ -337,15 +332,15 @@ public class Executor {
                 else {
                     //bVar10 = DAT_18340b0bf == '\0';
                     //check for un-inlined variable initialization
-                    pos = line.length() - 1;
+                    int pos = line.length() - 1;
                     if (pos > 25 && textBeforeEquals(line, pos, "== '\\0';")) {
                         pos -= 19;
                         if (textBeforeEquals(line, pos, " = DAT")) {
-                            sanityPos = pos - 5;
+                            int sanityPos = pos - 5;
 
                             //skip indentation
                             pos = skipWhile(line, 0, ' ');
-                            indentationPos = pos;
+                            int indentationPos = pos;
 
                             //getting variable name
                             pos = skipUntil(line, pos, ' ');
@@ -364,8 +359,6 @@ public class Executor {
     static void removeStaticInitialization() {
         System.out.print("Removing static initialization blocks...    ");
 
-        String previous;
-        String next;
         int i = 1;
 
         while (i != lines.length) {
@@ -378,8 +371,8 @@ public class Executor {
             }
             //realistically should never fall out of bounds anywhere
             if (lines[i].contains("il2cpp_runtime_class_init")) {
-                previous = lines[i - 1];
-                next = lines[i + 1];
+                String previous = lines[i - 1];
+                String next = lines[i + 1];
                 if (!previous.isEmpty() && previous.charAt(previous.length() - 1) == '{'
                         && !next.isEmpty() && next.charAt(next.length() - 1) == '}') {
                     i += 3;
@@ -408,14 +401,13 @@ public class Executor {
 
             Map<String, Integer> map = new HashMap<>();
             String previous = "";
-            int pos;
 
             for (String line : lines) {
                 ProgressTracker.progress();
 
                 if (!line.isEmpty()) {
                     if (line.charAt(0) == '}') {
-                        pos = skipWhile(previous, 0, ' ');
+                        int pos = skipWhile(previous, 0, ' ');
                         if (textAfterEquals(previous, pos, "FUN_")) {
                             map.merge(previous.substring(pos, pos + 13), 1, Integer::sum);
                         }
@@ -464,8 +456,6 @@ public class Executor {
         // INTERRUPTION LABEL PROCESSING //
         boolean inBlock = false;
         boolean checkLabel = false;
-        int pos;
-        int indentationPos;
 
         String label = null;
         List<String> methodLines = new ArrayList<>();
@@ -481,11 +471,10 @@ public class Executor {
 
                 //check if label points to a return statement
                 if (checkLabel) {
-                    pos = skipWhile(line, 0, ' ');
-                    indentationPos = pos;
+                    int pos = skipWhile(line, 0, ' ');
 
                     if (textAfterEquals(line, pos, "return")) {
-                        exitLabels.put(label, line.substring(indentationPos));
+                        exitLabels.put(label, line.substring(pos));
                         methodLines.removeLast();
                     }
                     checkLabel = false;
@@ -500,7 +489,7 @@ public class Executor {
                         String methodLine = methodLines.get(i);
                         if (methodLine.isEmpty() || methodLine.charAt(0) != ' ') continue;
 
-                        pos = skipWhile(methodLine, 0, ' ');
+                        int pos = skipWhile(methodLine, 0, ' ');
                         if (pos == methodLine.length() || methodLine.charAt(pos) == '}') continue;
 
                         if (textAfterEquals(methodLine, pos, "return;")) {
@@ -518,7 +507,7 @@ public class Executor {
                             appendWithNewLine(methodLine);
                             continue;
                         }
-                        pos = methodLine.indexOf("goto");
+                        int pos = methodLine.indexOf("goto");
                         if (pos != -1 && methodLine.length() >= pos + 17 && methodLine.charAt(pos + 5) == 'L') {
                             label = methodLine.substring(pos + 5, pos + 18);
                             if (exitLabels.containsKey(label)) {
@@ -567,10 +556,6 @@ public class Executor {
         Matcher klassMatcher = Pattern.compile("[*&]*\\(([^().]*)\\.(?:_\\d*|klass)?\\)(?=\\.)").matcher("");
         Matcher parenthesisMatcher = Pattern.compile("[*&]*\\(([^().]*\\.[^)]*)\\)(?=\\.)").matcher("");
 
-        String variable;
-        String method;
-        String args;
-
         for (String line : lines) {
             ProgressTracker.progress();
 
@@ -593,9 +578,9 @@ public class Executor {
 
             ptr1Matcher.reset(line);
             while (ptr1Matcher.find()) {
-                variable = ptr1Matcher.group(2);
-                method = ptr1Matcher.group(3);
-                args = ptr1Matcher.group(4);
+                String variable = ptr1Matcher.group(2);
+                String method = ptr1Matcher.group(3);
+                String args = ptr1Matcher.group(4);
                 if (!args.isEmpty()) args = args.substring(0, args.length() - 1);
 
                 line = line.substring(0, ptr1Matcher.start()) + variable + '.' + method + '(' + args + ')' + line.substring(ptr1Matcher.end());
@@ -604,8 +589,8 @@ public class Executor {
 
             ptr2Matcher.reset(line);
             while (ptr2Matcher.find()) {
-                variable = ptr2Matcher.group(2);
-                method = ptr2Matcher.group(3);
+                String variable = ptr2Matcher.group(2);
+                String method = ptr2Matcher.group(3);
 
                 line = line.substring(0, ptr2Matcher.start()) + variable + '.' + method + "()" + line.substring(ptr2Matcher.end());
                 ptr2Matcher.reset(line);
@@ -632,11 +617,8 @@ public class Executor {
 
         boolean inBlock = false;
         String blockEnd = null;
-        int indentationPos;
-        int variablePos;
         String indentation = null;
         String variableName = null;
-        int pos;
         List<String> blockContent = new ArrayList<>();
 
         for (String line : lines) {
@@ -685,8 +667,8 @@ public class Executor {
                 //checking if current line is a header of a null check if block
                 if (line.charAt(line.length() - 1) == '{') {
                     //skip indentation
-                    pos = skipWhile(line, 0, ' ');
-                    indentationPos = pos;
+                    int pos = skipWhile(line, 0, ' ');
+                    int indentationPos = pos;
 
                     //check 'if (' segment
                     if (!textAfterEquals(line, pos, "if (")) {
@@ -697,7 +679,7 @@ public class Executor {
 
                     //getting variable name
                     pos = skipUntil(line, pos, ' ');
-                    variablePos = pos;
+                    int variablePos = pos;
 
                     //check the rest of the header
                     pos++;
@@ -721,17 +703,14 @@ public class Executor {
     //helper recursive method for collapsing if blocks within other if blocks
     private static List<String> replaceNullChecksRecursion(List<String> input) {
         List<String> lines = new ArrayList<>(input.size());
+        lines.add(input.getFirst());
 
         boolean inBlock = false;
         String blockEnd = null;
-        int indentationPos;
-        int variablePos;
         String indentation = null;
         String variableName = null;
-        int pos;
         List<String> blockContent = new ArrayList<>();
 
-        lines.add(input.getFirst());
         for (int k = 1; k != input.size(); k++) {
             String line = input.get(k);
             if (inBlock) {
@@ -771,8 +750,8 @@ public class Executor {
                 //checking if current line is a header of a null check if block
                 if (line.charAt(line.length() - 1) == '{') {
                     //skip indentation
-                    pos = skipWhile(line, 0, ' ');
-                    indentationPos = pos;
+                    int pos = skipWhile(line, 0, ' ');
+                    int indentationPos = pos;
 
                     //check 'if (' segment
                     if (!textAfterEquals(line, pos, "if (")) {
@@ -783,7 +762,7 @@ public class Executor {
 
                     //getting variable name
                     pos = skipUntil(line, pos, ' ');
-                    variablePos = pos;
+                    int variablePos = pos;
 
                     //check the rest of the header
                     pos++;
@@ -940,11 +919,6 @@ public class Executor {
         Set<String> subtypes = new HashSet<>();
 
         Matcher typeMatcher = Pattern.compile("Method_([^< ]*?)(?<=[^_])<((?:([a-zA-Z_]+<[a-zA-Z_]*>),?|[a-zA-Z_]+,?)*)>(?=_*[A-Za-z])").matcher("");
-        int pos;
-        int argCount;
-        Boolean b;
-        String args;
-        String name;
 
         //finding generic types with preserved formatting. Good data with accurate arg counts, but not all types are found
         for (String line : lines) {
@@ -954,9 +928,9 @@ public class Executor {
                 typeMatcher.reset(line);
                 if (typeMatcher.find()) {
                     //parsing main type
-                    args = typeMatcher.group(2);
-                    argCount = 1;
-                    pos = 0;
+                    String args = typeMatcher.group(2);
+                    int argCount = 1;
+                    int pos = 0;
                     while (pos != args.length()) {
                         if (args.charAt(pos) == ',') argCount++;
                         else if (args.charAt(pos) == '<') {
@@ -964,7 +938,7 @@ public class Executor {
                         }
                         pos++;
                     }
-                    b = typesWithArgs.get(typeMatcher.group(1));
+                    Boolean b = typesWithArgs.get(typeMatcher.group(1));
                     if (b == null) typesWithArgs.put(typeMatcher.group(1), argCount == 1);
                     else {
                         if (argCount != 1 && b) typesWithArgs.put(typeMatcher.group(1), Boolean.FALSE);
@@ -976,7 +950,7 @@ public class Executor {
 
                     argCount = 1;
                     pos = args.indexOf('<');
-                    name = args.substring(args.charAt(0) == '_' ? 1 : 0, pos);
+                    String name = args.substring(args.charAt(0) == '_' ? 1 : 0, pos);
                     pos++;
 
                     while (pos != args.length()) {
@@ -996,22 +970,17 @@ public class Executor {
 
         Matcher garbageMatcher = Pattern.compile("___c(?:__\\d*)?(?:DisplayClass\\d*_\\d)?$|_d__\\d*$").matcher("");
         Set<String> badTypes = new HashSet<>();
-        int index;
 
         //finding generic types through a '_T_' string. Could find additional types, but gives a lot of garbage and has to be extra processed
-        int innerPos;
-        String type;
-        int searchIndex;
-
         for (String line : lines) {
             ProgressTracker.progress();
 
-            index = 0;
+            int index = 0;
             loop:
             while (index != -1) {
                 index = line.indexOf("_T_", index);
                 if (index != -1) {
-                    pos = index;
+                    int pos = index;
                     while (pos != -1 && line.charAt(pos) != ' ') {
                         char c = line.charAt(pos);
                         if (c == ',' || c == '(' || c == '.' || c == '>' || c == '*') {
@@ -1020,16 +989,16 @@ public class Executor {
                         }
                         pos--;
                     }
-                    type = line.substring(pos + 1, index);
+                    String type = line.substring(pos + 1, index);
 
-                    innerPos = 0;
+                    int innerPos = 0;
                     while (innerPos != type.length() && (type.charAt(innerPos) < 65 || type.charAt(innerPos) > 90)) innerPos++;
                     if (innerPos != type.length()) type = type.substring(innerPos);
 
                     garbageMatcher.reset(type);
                     if (garbageMatcher.find()) type = garbageMatcher.replaceAll("");
 
-                    searchIndex = type.indexOf("_T_");
+                    int searchIndex = type.indexOf("_T_");
                     if (searchIndex != -1) type = type.substring(0, searchIndex);
 
                     searchIndex = type.indexOf("__");
@@ -1050,7 +1019,7 @@ public class Executor {
         //clear up bad type search output
         Iterator<String> iterator = badTypes.iterator();
         while (iterator.hasNext()) {
-            type = iterator.next();
+            String type = iterator.next();
             //remove confirmed good types from bad types
             if (typesWithArgs.containsKey(type)) iterator.remove();
                 //remove garbage coming from multi-arg generics
@@ -1086,8 +1055,8 @@ public class Executor {
         //remove duplicates within subtypes
         iterator = subtypes.iterator();
         while (iterator.hasNext()) {
-            type = iterator.next();
-            index = type.indexOf('_');
+            String type = iterator.next();
+            int index = type.indexOf('_');
             if (index != -1) {
                 type = type.substring(index + 1);
                 for (String subtype : subtypes) {
@@ -1102,7 +1071,6 @@ public class Executor {
         ProgressTracker.set(40);
 
         //remove duplicate subtypes by comparison
-        String subTypeWithPrefix;
         iterator = subtypes.iterator();
         loop:
         while (iterator.hasNext()) {
@@ -1111,7 +1079,7 @@ public class Executor {
                 iterator.remove();
                 continue;
             }
-            subTypeWithPrefix = "_" + subType;
+            String subTypeWithPrefix = "_" + subType;
             for (String t : typesWithArgs.keySet()) {
                 if (t.endsWith(subTypeWithPrefix)) {
                     iterator.remove();
@@ -1132,7 +1100,7 @@ public class Executor {
         List<String> goodTypeTokens = typesWithArgs.keySet().stream().map(s -> s.indexOf('_') == -1 ? '_' + s : s.substring(s.lastIndexOf('_'))).toList();
         iterator = badTypes.iterator();
         while (iterator.hasNext()) {
-            type = iterator.next();
+            String type = iterator.next();
             for (String token : goodTypeTokens) {
                 if (type.endsWith(token)) {
                     iterator.remove();
@@ -1140,16 +1108,14 @@ public class Executor {
                 }
             }
         }
-        //noinspection UnusedAssignment
-        goodTypeTokens = null;
 
         ProgressTracker.set(60);
 
         //remove duplicates within bad types
         iterator = badTypes.iterator();
         while (iterator.hasNext()) {
-            type = iterator.next();
-            index = type.indexOf('_');
+            String type = iterator.next();
+            int index = type.indexOf('_');
             if (index != -1) {
                 type = type.substring(index + 1);
                 for (String subtype : subtypes) {
@@ -1167,15 +1133,13 @@ public class Executor {
         for (String badType : badTypes) {
             typesWithArgs.put(badType, Boolean.FALSE);
         }
-        //noinspection UnusedAssignment
-        badTypes = null;
 
         ProgressTracker.set(80);
 
         //tokenizing all known types to be used as subtypes
         for (Map.Entry<String, Boolean> entry : typesWithArgs.entrySet()) {
-            type = entry.getKey();
-            index = type.lastIndexOf('_');
+            String type = entry.getKey();
+            int index = type.lastIndexOf('_');
 
             if (index != -1) subtypes.add(type.substring(index + 1));
             else subtypes.add(type);
@@ -1188,13 +1152,7 @@ public class Executor {
 
         //FORMATTING TYPES
         boolean doReplace = false;
-        boolean withIndent;
         StringBuilder builder = new StringBuilder(1000);
-        char[] chars;
-        String lastArg;
-        int backtrackPos;
-        int braceCount;
-        int endPos;
         char[] indentArr = new char[TAB_LENGTH];
         Arrays.fill(indentArr, ' ');
 
@@ -1219,32 +1177,32 @@ public class Executor {
             }
 
             if (doReplace || isFunctionHeader(line)) {
-                withIndent = doReplace;
+                boolean withIndent = doReplace;
                 doReplace = true;
-                braceCount = 0;
 
-                pos = line.indexOf(' ', withIndent ? TAB_LENGTH : 0);
+                int pos = line.indexOf(' ', withIndent ? TAB_LENGTH : 0);
+
                 try {
                     if (pos != -1 && line.charAt(pos - 2) == '_' && line.charAt(pos - 3) == '_') { //check for generic
 
                         builder.setLength(0);
                         if (withIndent) builder.append(indentArr);
 
-                        type = line.substring(withIndent ? TAB_LENGTH : 0, pos);
+                        String type = line.substring(withIndent ? TAB_LENGTH : 0, pos);
 
                         for (String t : typesSorted) {
                             if (type.startsWith(t)) { //type is known
-                                chars = type.substring(t.length() + 1).toCharArray();
+                                char[] chars = type.substring(t.length() + 1).toCharArray();
                                 builder.append(t);
                                 builder.append('<');
-                                braceCount++;
-                                innerPos = 0;
+                                int braceCount = 1;
+                                int innerPos = 0;
 
                                 loop:
                                 while (innerPos != chars.length) {
                                     if (chars[innerPos] == '_') {
                                         //check for type end
-                                        endPos = innerPos;
+                                        int endPos = innerPos;
                                         while (endPos != chars.length && chars[endPos] == '_') endPos++;
                                         if (endPos == chars.length - 1) { //type end
                                             while (innerPos != chars.length - 2) {
@@ -1263,9 +1221,9 @@ public class Executor {
                                             builder.append(',');
                                         }
                                         else { //generic type parameter or non-generic subclass
-                                            backtrackPos = builder.length() - 1;
+                                            int backtrackPos = builder.length() - 1;
                                             while (backtrackPos != 0 && builder.charAt(backtrackPos) != ',' && builder.charAt(backtrackPos) != '<') backtrackPos--;
-                                            lastArg = builder.substring(backtrackPos + 1);
+                                            String lastArg = builder.substring(backtrackPos + 1);
                                             for (String st : subtypesSorted) {
                                                 if (lastArg.equals(st)) {
                                                     builder.append('<');
@@ -1285,7 +1243,7 @@ public class Executor {
                             }
                         }
                         //type is not known
-                        innerPos = type.length() - 2;
+                        int innerPos = type.length() - 2;
                         while (innerPos != 0 && type.charAt(innerPos) == '_') innerPos--;
                         while (innerPos != 0 && type.charAt(innerPos) != '_') innerPos--;
                         builder.append(type, 0, innerPos);
@@ -1339,8 +1297,6 @@ public class Executor {
         }
 
         // FINDING ALL METHODS WITH MethodInfo ARGUMENTS //
-        int index;
-        char c;
         Map<String, int[]> methods = new HashMap<>(1000);
 
         loop:
@@ -1350,11 +1306,11 @@ public class Executor {
             if (line.isEmpty()) continue;
 
             if (isFunctionHeader(line)) {
-                index = line.lastIndexOf("MethodInfo");
+                int index = line.lastIndexOf("MethodInfo");
                 if (index == -1) continue;
 
                 while (index != line.length()) {
-                    c = line.charAt(index);
+                    char c = line.charAt(index);
                     if (c == ',') continue loop;
                     if (c == ')') {
                         methods.putIfAbsent(line.substring(skipWhile(line, line.indexOf(' '), ' ', '*'), line.indexOf('(')), new int[]{0, 0});
@@ -1368,25 +1324,20 @@ public class Executor {
 
         System.out.print("Removing useless MethodInfo arguments (part 2)...    ");
 
-        int pos;
-        int[] ints;
-        int blockCount;
-        String name;
-
         // COUNTING METHOD USES AND REMOVING METHODS THAT HAVE NON-NULL MethodInfo ARGUMENTS USED FROM LIST //
         for (String line : lines) {
             ProgressTracker.progress();
 
             if (line.isEmpty() || line.charAt(0) != ' ') continue;
 
-            index = line.indexOf('(');
+            int index = line.indexOf('(');
             while (index != -1) {
-                pos = index - 1;
-                blockCount = 0;
+                int pos = index - 1;
+                int blockCount = 0;
                 while (pos != -1) {
-                    c = line.charAt(pos);
+                    char c = line.charAt(pos);
                     if (c == ' ' || c == '(' || c == ')' || c == '*' || c == '&' || c == '-' || (c == ',' && blockCount == 0)) {
-                        ints = methods.get(line.substring(pos + 1, index));
+                        int[] ints = methods.get(line.substring(pos + 1, index));
                         if (ints != null) {
                             ints[0]++;
                             blockCount = 1;
@@ -1420,8 +1371,6 @@ public class Executor {
 
         System.out.print("Removing useless MethodInfo arguments (part 3)...    ");
 
-        int backPos;
-
         // REMOVING ARGUMENTS FROM LEFTOVER METHODS & THEIR USES //
         for (String line : lines) {
             ProgressTracker.progress();
@@ -1438,7 +1387,7 @@ public class Executor {
                     continue;
                 }
 
-                index = line.lastIndexOf("MethodInfo");
+                int index = line.lastIndexOf("MethodInfo");
                 if (index == -1) { //shouldn't happen but just in case
                     appendWithNewLine(line);
                     continue;
@@ -1455,15 +1404,14 @@ public class Executor {
                     continue;
                 }
 
-                index = line.indexOf('(');
+                int index = line.indexOf('(');
                 while (index != -1) {
-                    pos = index - 1;
-                    blockCount = 0;
+                    int pos = index - 1;
+                    int blockCount = 0;
                     while (pos != -1) {
-                        c = line.charAt(pos);
+                        char c = line.charAt(pos);
                         if (c == ' ' || c == '(' || c == ')' || c == '*' || c == '&' || c == '-' || (c == ',' && blockCount == 0)) {
-                            name = line.substring(pos + 1, index);
-                            if (methods.containsKey(name)) {
+                            if (methods.containsKey(line.substring(pos + 1, index))) {
                                 blockCount = 1;
                                 pos = index + 1;
                                 while (pos != line.length()) {
@@ -1471,7 +1419,7 @@ public class Executor {
                                     if (c == ')') {
                                         blockCount--;
                                         if (blockCount == 0 && textBeforeEquals(line, pos - 1, "NULL")) {
-                                            backPos = line.charAt(pos - 5) == ',' ? pos - 5 : pos - 4;
+                                            int backPos = line.charAt(pos - 5) == ',' ? pos - 5 : pos - 4;
                                             line = line.substring(0, backPos) + line.substring(pos);
                                             break;
                                         }
@@ -1608,25 +1556,25 @@ public class Executor {
                         continue;
                     }
 
-                    allocationPos = allocationPositions.get(variableName);
-                    if (allocationPos != null) {
+                    Integer allocationPos = allocationPositions.get(variableName);
+                    if (allocationPos != null) { //variable was allocated within a function
                         builder.setLength(0);
 
                         builder.append(line, 0, skipWhile(line, 0, ' ')); //indentation
                         builder.append(variableName);
                         builder.append(" = new ");
 
-                        type = allocationTypes.get(variableName);
+                        String type = allocationTypes.get(variableName);
                         if (type != null && pos != argsPos) builder.append(allocationTypes.get(variableName));
                         else builder.append(line, skipWhile(line, 0, ' '), index - 2);
 
                         builder.append('(');
 
-                        if (line.charAt(argsPos) == ',') { //contructor args
+                        if (line.charAt(argsPos) == ',') { //constructor args
                             pos = argsPos + 1;
-                            braceCount = 0;
+                            int braceCount = 0;
                             while (pos != line.length()) {
-                                c = line.charAt(pos);
+                                char c = line.charAt(pos);
 
                                 if (c == '(') braceCount++;
                                 else if (c == ')') {
@@ -1780,16 +1728,16 @@ public class Executor {
         return charPos == 0;
     }
 
+    @SuppressWarnings("SameParameterValue")
     private static int skipWhile(String line, int pos, char c) {
         while (pos != line.length() && line.charAt(pos) == c) pos++;
         return pos;
     }
 
     private static int skipWhile(String line, int pos, char... chars) {
-        char current;
         loop:
         while (pos != line.length()) {
-            current = line.charAt(pos);
+            char current = line.charAt(pos);
             for (char c : chars) {
                 if (c == current) {
                     pos++;
@@ -1808,9 +1756,8 @@ public class Executor {
     }
 
     private static int skipUntil(String line, int pos, char... chars) {
-        char current;
         while (pos != line.length()) {
-            current = line.charAt(pos);
+            char current = line.charAt(pos);
             for (char c : chars) {
                 if (c == current) return pos;
             }
