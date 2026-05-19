@@ -1684,11 +1684,10 @@ public class Executor {
         else return null;
     }
 
-    //todo false positives -> 3153583
     static void replaceUnderscoresForMethods() {
         System.out.print("Replacing underscores for methods...    ");
 
-        Matcher matcher = Pattern.compile("(?<=[a-zA-Z0-9>])__(?=[^_0-9][a-zA-Z0-9_<>]*\\()").matcher("");
+        Matcher matcher = Pattern.compile("(?<=[a-zA-Z0-9>])___?(?=[^_0-9][a-zA-Z0-9_<>]*\\()").matcher("");
 
         for (String line : lines) {
             ProgressTracker.progress();
