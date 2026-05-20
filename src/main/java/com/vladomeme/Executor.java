@@ -1710,6 +1710,96 @@ public class Executor {
         else return null;
     }
 
+    static void correctLocalBooleans() {
+        System.out.print("Correcting local boolean variables...    ");
+
+        char[] indentArr = new char[TAB_LENGTH];
+        Arrays.fill(indentArr, ' ');
+        String indent = String.copyValueOf(indentArr);
+
+        boolean inBlock = false;
+        int blockLinePos = 0;
+        List<String> methodLines = new ArrayList<>();
+        Map<String, Integer> declarations = new HashMap<>();
+
+        for (String line : lines) {
+            ProgressTracker.progress();
+            if (inBlock) {
+                blockLinePos++;
+                if (line.isEmpty()) {
+                    methodLines.add("");
+                    continue;
+                }
+                //method end
+                if (line.charAt(0) == '}') {
+                    inBlock = false;
+
+                    for (String methodLine : methodLines) {
+                        if (methodLine.isEmpty()) appendEmpty();
+                        else appendWithNewLine(methodLine);
+                    }
+                    methodLines.clear();
+                    declarations.clear();
+
+                    appendWithNewLine(line);
+                    continue;
+                }
+                //variable declarations
+                if (textAfterEquals(line, TAB_LENGTH, "char ")) {
+                    int pos = skipWhile(line, TAB_LENGTH + 5, '*');
+                    String variableName = line.substring(pos, skipUntil(line, pos, ';', ' ', '['));
+                    declarations.put(variableName, blockLinePos);
+
+                    methodLines.add(line);
+                    continue;
+                }
+                //substitution
+                boolean reverse;
+                int index = line.indexOf(" == '\\0'");
+                if (index == -1) {
+                    index = line.indexOf(" != '\\0'");
+                    reverse = false;
+                }
+                else reverse = true;
+                if (index != -1) {
+                    while (index != -1) {
+                        int pos = skipUntilReverse(line, index - 1, '(', ')', ']', ',', '.', ' ');
+                        String variableName = line.substring(pos + 1, index);
+                        Integer linePos = declarations.get(variableName);
+                        if (linePos != null) {
+                            if (linePos != -1) {
+                                methodLines.set(linePos, indent + "bool " + variableName + ";");
+                                declarations.put(variableName, -1);
+                            }
+                            line = line.substring(0, pos + 1) + (reverse ? '!' : "") + variableName + line.substring(index + 8);
+                        }
+
+                        int newIndex = line.indexOf(" == '\\0'", index + 8);
+                        if (newIndex == -1) {
+                            newIndex = line.indexOf(" != '\\0'", index + 8);
+                            reverse = false;
+                        }
+                        else reverse = true;
+                        index = newIndex;
+                    }
+                }
+                methodLines.add(line);
+            }
+            else {
+                if (line.isEmpty()) {
+                    appendEmpty();
+                    continue;
+                }
+                //check if current line is a function header
+                if (isFunctionHeader(line)) {
+                    inBlock = true;
+                    blockLinePos = -1;
+                }
+                appendWithNewLine(line);
+            }
+        }
+    }
+
     static void replaceUnderscoresForMethods() {
         System.out.print("Replacing underscores for methods...    ");
 
@@ -1753,7 +1843,6 @@ public class Executor {
         return charPos == 0;
     }
 
-    @SuppressWarnings("SameParameterValue")
     private static int skipWhile(String line, int pos, char c) {
         while (pos != line.length() && line.charAt(pos) == c) pos++;
         return pos;
@@ -1787,6 +1876,17 @@ public class Executor {
                 if (c == current) return pos;
             }
             pos++;
+        }
+        return pos;
+    }
+
+    private static int skipUntilReverse(String line, int pos, char... chars) {
+        while (pos != -1) {
+            char current = line.charAt(pos);
+            for (char c : chars) {
+                if (c == current) return pos;
+            }
+            pos--;
         }
         return pos;
     }

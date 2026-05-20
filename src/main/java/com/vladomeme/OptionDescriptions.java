@@ -193,6 +193,13 @@ public class OptionDescriptions {
                 __this_02 = new UnityEngine_WaitForSecondsRealtime((1.0 / iVar6) * 3.0);
             """;
 
+    public static final String correctLocalBooleans = """
+            Fixes local boolean type variables that got incorrectly assigned
+            a char type.
+            
+            
+            """;
+
     public static final String replaceUnderscoresForMethods = """
             Actual method names will be separated from the class name with a
             dot instead of underscores (in both declarations and calls).
