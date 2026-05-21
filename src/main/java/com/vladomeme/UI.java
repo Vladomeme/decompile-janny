@@ -126,6 +126,11 @@ public class UI extends JFrame {
         executeButton.addActionListener(e -> Executor.execute(options, Path.of(selectionField.getText()), saveToCopy));
         bottomPanel.add(executeButton, BorderLayout.WEST);
 
+        JButton retypingButton = new JButton("Generate retyping info");
+        retypingButton.setFont(new Font("Arial", Font.BOLD, 14));
+        retypingButton.addActionListener(e -> RetypeAnalyser.generateRetypingInfo(Path.of(selectionField.getText())));
+        bottomPanel.add(retypingButton, BorderLayout.EAST);
+
         add(bottomPanel, BorderLayout.SOUTH);
 
         options = new ArrayList<>();

@@ -11,6 +11,8 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static com.vladomeme.ParsingUtils.*;
+
 //todo move opening angle brackets to the same line
 //todo ghidra decompile settings warning
 //todo procedure order dependence warning
@@ -39,7 +41,7 @@ public class Executor {
         for (ExecutionOption option : options) {
             if (option.enabled && option.preparation != null) {
                 option.preparation.run();
-                ProgressTracker.reset();
+                ProgressTracker.reset(lines.length);
             }
         }
 
@@ -47,7 +49,7 @@ public class Executor {
             if (option.enabled && option.execution != null) {
                 option.execution.run();
                 resetLineArray();
-                ProgressTracker.reset();
+                ProgressTracker.reset(lines.length);
             }
         }
 
@@ -98,7 +100,7 @@ public class Executor {
         try {
             lines = Files.readAllLines(path).toArray(new String[0]);
             System.out.println("Current line count: " + lines.length);
-            ProgressTracker.reset();
+            ProgressTracker.reset(lines.length);
         }
         catch (IOException e) {
             throw new RuntimeException(e);
@@ -474,7 +476,7 @@ public class Executor {
             else appendWithNewLine(line);
         }
         resetLineArray();
-        ProgressTracker.reset();
+        ProgressTracker.reset(lines.length);
 
         System.out.print("Simplifying procedure interruptions (step 2)...    ");
 
@@ -989,7 +991,7 @@ public class Executor {
                 }
             }
         }
-        ProgressTracker.reset();
+        ProgressTracker.reset(lines.length);
 
         System.out.print("Formatting generic types (step 2)...    ");
 
@@ -1037,7 +1039,7 @@ public class Executor {
                 }
             }
         }
-        ProgressTracker.reset();
+        ProgressTracker.reset(lines.length);
 
         System.out.print("Formatting generic types (step 3)...    ");
 
@@ -1171,7 +1173,7 @@ public class Executor {
         }
 
         ProgressTracker.end();
-        ProgressTracker.reset();
+        ProgressTracker.reset(lines.length);
 
         System.out.print("Formatting generic types (step 4)...    ");
 
@@ -1345,7 +1347,7 @@ public class Executor {
                 }
             }
         }
-        ProgressTracker.reset();
+        ProgressTracker.reset(lines.length);
 
         System.out.print("Removing useless MethodInfo arguments (part 2)...    ");
 
@@ -1389,7 +1391,7 @@ public class Executor {
                 index = line.indexOf('(', index + 1);
             }
         }
-        ProgressTracker.reset();
+        ProgressTracker.reset(lines.length);
 
         //remove all methods that exceed the threshold
         methods.entrySet().removeIf(entry -> entry.getValue()[0] != 0 && (float) entry.getValue()[1] / entry.getValue()[0] > methodInfoThreshold);
@@ -1816,81 +1818,6 @@ public class Executor {
         }
     }
 
-    private static boolean isFunctionHeader(String line) {
-        char c = line.charAt(0);
-        return line.length() > 3 && (c != ' ' && c != '/' && c != '}'
-                && (c != 'L' || (line.charAt(1) != 'A' && line.charAt(2) != 'B' && line.charAt(3) != '_'))
-                && line.charAt(line.length() - 1) == '{' && line.charAt(line.length() - 3) == ')');
-    }
-
-    private static boolean textAfterEquals(String line, int pos, String text) {
-        char[] chars = text.toCharArray();
-        int charPos = 0;
-
-        while (pos != line.length() && charPos != chars.length) {
-            if (line.charAt(pos++) != chars[charPos++]) return false;
-        }
-        return charPos == chars.length;
-    }
-
-    private static boolean textBeforeEquals(String line, int pos, String text) {
-        char[] chars = text.toCharArray();
-        int charPos = chars.length - 1;
-
-        while (pos != 0 && charPos != 0) {
-            if (line.charAt(pos--) != chars[charPos--]) return false;
-        }
-        return charPos == 0;
-    }
-
-    private static int skipWhile(String line, int pos, char c) {
-        while (pos != line.length() && line.charAt(pos) == c) pos++;
-        return pos;
-    }
-
-    private static int skipWhile(String line, int pos, char... chars) {
-        loop:
-        while (pos != line.length()) {
-            char current = line.charAt(pos);
-            for (char c : chars) {
-                if (c == current) {
-                    pos++;
-                    continue loop;
-                }
-            }
-            break;
-        }
-        return pos;
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private static int skipUntil(String line, int pos, char c) {
-        int index = line.indexOf(c, pos);
-        return index != -1 ? index : line.length();
-    }
-
-    private static int skipUntil(String line, int pos, char... chars) {
-        while (pos != line.length()) {
-            char current = line.charAt(pos);
-            for (char c : chars) {
-                if (c == current) return pos;
-            }
-            pos++;
-        }
-        return pos;
-    }
-
-    private static int skipUntilReverse(String line, int pos, char... chars) {
-        while (pos != -1) {
-            char current = line.charAt(pos);
-            for (char c : chars) {
-                if (c == current) return pos;
-            }
-            pos--;
-        }
-        return pos;
-    }
-
     private static void appendEmpty() {
         resultBuilder.append(System.lineSeparator());
     }
@@ -1901,40 +1828,5 @@ public class Executor {
 
     private static void appendWithNewLine(String s) {
         resultBuilder.append(s).append(System.lineSeparator());
-    }
-
-    static class ProgressTracker {
-
-        static int counter;
-        static int split;
-        static int current;
-
-        static void reset() {
-            split = lines.length / 100;
-            current = 0;
-            counter = 0;
-        }
-
-        static void set(int progress) {
-            counter = progress;
-            if (counter < 10) System.out.print("\b\b\b " + counter + "%");
-            else if (counter == 100) System.out.println("\b\b\b\b " + counter + "%");
-            else if (counter < 100) System.out.print("\b\b\b\b " + counter + "%");
-        }
-
-        static void progress() {
-            if (++current == split) {
-                current = 0;
-                counter++;
-                if (counter < 10) System.out.print("\b\b\b " + counter + "%");
-                else if (counter == 100) System.out.println("\b\b\b\b " + counter + "%");
-                else if (counter < 100) System.out.print("\b\b\b\b " + counter + "%");
-            }
-        }
-
-        static void end() {
-            counter = 100;
-            System.out.println("\b\b\b\b " + counter + "%");
-        }
     }
 }
