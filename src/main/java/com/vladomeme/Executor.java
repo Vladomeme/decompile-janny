@@ -935,7 +935,7 @@ public class Executor {
                 appendWithNewLine("];");
                 continue;
             }
-            appendWithNewLine(line.replace(".m_Items[", "[").replace("_array", "[]"));
+            appendWithNewLine(line.replace(".m_Items[", "[").replace("_array ", "[] "));
         }
     }
 
