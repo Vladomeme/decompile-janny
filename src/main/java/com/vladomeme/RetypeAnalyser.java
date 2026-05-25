@@ -18,7 +18,6 @@ public class RetypeAnalyser {
 
     static HashSet<String> targetedTypes = null;
 
-    //todo Method$SingletonLoadableMonoBehaviour<GameScript>.get_Instance() + 32
     public static void generateRetypingInfo(Path path) {
         prepareData(path);
 
@@ -46,37 +45,16 @@ public class RetypeAnalyser {
                             writer.newLine();
                             namePrinted = true;
                         }
-                        writer.write("    " + entry.getKey() + " " + entry.getValue().type);
+                        writer.write("    " + entry.getKey());
                         writer.newLine();
+                        for (String type : entry.getValue().types) {
+                            writer.write("        " + type);
+                            writer.newLine();
+                        }
                     }
                 }
                 if (namePrinted) writer.newLine();
             }
-
-//            for (MethodData method : list) {
-//                writer.write(method.signature);
-//                writer.newLine();
-//
-//                if (!method.localVariables.isEmpty()) {
-//                    writer.write("    Local variables:");
-//                    writer.newLine();
-//                    for (Map.Entry<String, String> entry : method.localVariables.entrySet()) {
-//                        writer.write("        " + entry.getValue() + " " + entry.getKey());
-//                        writer.newLine();
-//                    }
-//                }
-//
-//                if (!method.methodLines.isEmpty()) {
-//                    writer.write("    Code:");
-//                    writer.newLine();
-//                    for (String line : method.methodLines) {
-//                        if (line.isEmpty()) continue;
-//                        writer.write("        " + line);
-//                        writer.newLine();
-//                    }
-//                    writer.newLine();
-//                }
-//            }
             writer.close();
             System.out.println("Finished!");
             JOptionPane.showMessageDialog(null, "Retype information saved to: " + path,
@@ -204,7 +182,11 @@ public class RetypeAnalyser {
                 }
             }
         }
+        //dumpTypeData(types, path);
+        return types;
+    }
 
+    private static void dumpTypeData(HashMap<String, StructData> types, Path path) {
         try {
             path = Path.of(path + ".TYPEDUMP");
             BufferedWriter writer = new BufferedWriter(new FileWriter(new File(path.toUri())));
@@ -229,7 +211,6 @@ public class RetypeAnalyser {
         catch (IOException e) {
             throw new RuntimeException(e);
         }
-        return types;
     }
 
     private static void tryFindFieldSize(HashMap<String, StructData> types, TypeField field) {
@@ -380,7 +361,10 @@ public class RetypeAnalyser {
             ProgressTracker.progress();
 
             for (String line : method.methodLines) {
+                if (line.isEmpty()) continue;
+
                 tryConstructorRetype(method.localVariables, line);
+                trySingletonRetype(method.localVariables, line);
             }
         }
     }
@@ -391,19 +375,55 @@ public class RetypeAnalyser {
             int pos = skipWhile(line, 0, ' ');
             String variable = line.substring(pos, skipUntil(line, pos, ' ', '.', '('));
             VariableType variableType = variables.get(variable);
-            if (variableType == null || variableType.changed || !targetedTypes.contains(variableType.type)) return;
+            if (variableType == null || (!variableType.changed && !targetedTypes.contains(variableType.types.iterator().next()))) return;
 
             int endPos = skipUntil(line, index + 6, '(', '[');
             String newType = line.substring(index + 6, endPos);
             if (line.charAt(endPos) == '[') newType = newType + "[]";
 
-            if (!Pattern.compile(Pattern.quote(newType), Pattern.CASE_INSENSITIVE).matcher(variableType.type).find()) {
-                variableType.type = newType.replace('<','_').replace('>', '_').replace(",", "__").replace(".", "__") + "_o *";
+            boolean shouldAdd = true;
+            for (String type : variableType.types) {
+                if (Pattern.compile(Pattern.quote(newType), Pattern.CASE_INSENSITIVE).matcher(type).find()) shouldAdd = false;
+            }
+            if (shouldAdd) {
+                if (!variableType.changed) variableType.types.clear();
+                variableType.types.add(newType.replace('<','_').replace('>', '_').replace(",", "__").replace(".", "__") + "_o *");
                 variableType.changed = true;
             }
         }
         //todo allocation removal not used case
     }
+
+    private static void trySingletonRetype(HashMap<String, VariableType> variables, String line) {
+        int index = line.indexOf("SingletonLoadableMonoBehaviour<");
+        if (index != -1) {
+            index += 31;
+
+            int pos = skipUntil(line, index, '>');
+            if (textAfterEquals(line, pos + 1, "_get_Instance__")) {
+                int variablePos = skipWhile(line, 0, ' ');
+                String variable = line.substring(variablePos, skipUntil(line, variablePos, ' '));
+                VariableType variableType = variables.get(variable);
+
+                if (variableType == null || (!variableType.changed && !targetedTypes.contains(variableType.types.iterator().next()))) return;
+
+                String newType = line.substring(index, pos);
+
+                if (textAfterEquals(line, pos + 16, " + 32")) newType = newType + "_c *";
+                else newType = newType + "_o *";
+
+                boolean shouldAdd = true;
+                for (String type : variableType.types) {
+                    if (Pattern.compile(Pattern.quote(newType), Pattern.CASE_INSENSITIVE).matcher(type).find()) shouldAdd = false;
+                }
+                if (shouldAdd) {
+                    if (!variableType.changed) variableType.types.clear();
+                    variableType.types.add(newType);
+                    variableType.changed = true;
+                }
+            }
+        }
+     }
 
     //Method_UnityEngine_Component_GetComponent<type> -> type to variable =
     //Method_UnityEngine_Component_GetComponents<type> -> type[] to variable =
@@ -439,11 +459,12 @@ public class RetypeAnalyser {
     }
 
     static class VariableType {
-        String type;
+        final Set<String> types;
         boolean changed;
 
         public VariableType(String type) {
-            this.type = type;
+            this.types = new HashSet<>();
+            this.types.add(type);
             this.changed = false;
         }
     }
