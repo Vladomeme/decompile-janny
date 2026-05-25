@@ -130,10 +130,10 @@ public class RetypeAnalyser {
                 //end
                 if (line.equals("};")) {
                     if (calculateSize) {
+                        applyPadding(currentStruct);
                         currentStruct.size = 0;
                         for (TypeField field : currentStruct.fields) currentStruct.size += field.size;
                     }
-
                     currentStruct = null;
                     continue;
                 }
@@ -195,6 +195,7 @@ public class RetypeAnalyser {
                     }
                 }
                 if (calculateSize) {
+                    applyPadding(struct);
                     struct.size = 0;
                     for (TypeField field : struct.fields) struct.size += field.size;
 
@@ -213,7 +214,7 @@ public class RetypeAnalyser {
             for (Map.Entry<String, StructData> entry : types.entrySet()) {
                 if (entry.getValue().size == -1) countBad++;
 
-                writer.write(entry.getKey());
+                writer.write(entry.getKey() + " " + entry.getValue().size);
                 writer.newLine();
 
                 for (TypeField field : entry.getValue().fields) {
@@ -257,6 +258,51 @@ public class RetypeAnalyser {
                 else yield -1;
             }
         };
+    }
+
+    private static void applyPadding(StructData struct) {
+        int pos = 0;
+        int maxSize = 0;
+        int i = 0;
+
+        while (i < struct.fields.size()) {
+            TypeField field = struct.fields.get(i);
+            if (field.size == 0) {
+                i++;
+                continue;
+            }
+
+            int size = Math.min(field.size, 8);
+            maxSize = Math.max(maxSize, field.size);
+
+            int mod = pos % size;
+            if (mod != 0) {
+                TypeField padding = new TypeField();
+                padding.name = "padding";
+                padding.type = "char[]";
+                padding.size = size - mod;
+                padding.isPointer = false;
+                struct.fields.add(i, padding);
+
+                pos += padding.size;
+                i++;
+            }
+            pos += size;
+            i++;
+        }
+        if (maxSize == 0) return;
+
+        maxSize = Math.min(maxSize, 8);
+
+        int mod = pos % maxSize;
+        if (mod != 0) {
+            TypeField padding = new TypeField();
+            padding.name = "padding";
+            padding.type = "char[]";
+            padding.size = maxSize - mod;
+            padding.isPointer = false;
+            struct.fields.add(padding);
+        }
     }
 
     private static List<MethodData> collectMethodData() {
@@ -327,7 +373,9 @@ public class RetypeAnalyser {
     }
 
     private static void collectRetypes(HashMap<String, StructData> types, List<MethodData> methods) {
+        System.out.print("Collecting retype information...    ");
         ProgressTracker.reset(methods.size());
+
         for (MethodData method : methods) {
             ProgressTracker.progress();
 
