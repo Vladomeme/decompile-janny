@@ -76,4 +76,22 @@ public class ParsingUtils {
         }
         return pos;
     }
+
+    public static int skipUntilMatching(String line, int pos, char leftChar, char rightChar) {
+        if (line.charAt(pos) == leftChar) pos++;
+
+        int count = 0;
+        while (pos != line.length()) {
+            char c = line.charAt(pos);
+
+            if (c == rightChar) {
+                if (count == 0) return pos;
+                count--;
+            }
+            else if (c == leftChar) count++;
+
+            pos++;
+        }
+        return pos;
+    }
 }

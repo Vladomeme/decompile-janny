@@ -365,6 +365,7 @@ public class RetypeAnalyser {
 
                 tryConstructorRetype(method.localVariables, line);
                 trySingletonRetype(method.localVariables, line);
+                tryComponentRetype(method.localVariables, line, types);
             }
         }
     }
@@ -379,17 +380,10 @@ public class RetypeAnalyser {
 
             int endPos = skipUntil(line, index + 6, '(', '[');
             String newType = line.substring(index + 6, endPos);
-            if (line.charAt(endPos) == '[') newType = newType + "[]";
+            if (line.charAt(endPos) == '[') newType += "[] *";
+            else newType += "_o *";
 
-            boolean shouldAdd = true;
-            for (String type : variableType.types) {
-                if (Pattern.compile(Pattern.quote(newType), Pattern.CASE_INSENSITIVE).matcher(type).find()) shouldAdd = false;
-            }
-            if (shouldAdd) {
-                if (!variableType.changed) variableType.types.clear();
-                variableType.types.add(newType.replace('<','_').replace('>', '_').replace(",", "__").replace(".", "__") + "_o *");
-                variableType.changed = true;
-            }
+            variableType.tryAddType(newType);
         }
         //todo allocation removal not used case
     }
@@ -412,32 +406,141 @@ public class RetypeAnalyser {
                 if (textAfterEquals(line, pos + 16, " + 32")) newType = newType + "_c *";
                 else newType = newType + "_o *";
 
-                boolean shouldAdd = true;
-                for (String type : variableType.types) {
-                    if (Pattern.compile(Pattern.quote(newType), Pattern.CASE_INSENSITIVE).matcher(type).find()) shouldAdd = false;
-                }
-                if (shouldAdd) {
-                    if (!variableType.changed) variableType.types.clear();
-                    variableType.types.add(newType);
-                    variableType.changed = true;
-                }
+                variableType.tryAddType(newType);
             }
         }
-     }
+    }
+    //type to "variable ="
+    //UnityEngine_Component_GetComponent<type>
+    //UnityEngine_Component_GetComponentInChildren<type>
+    //UnityEngine_Component_GetComponentInParent<type>
+    //GameObjectExtensions_GetOrAddComponent<type>
 
-    //Method_UnityEngine_Component_GetComponent<type> -> type to variable =
-    //Method_UnityEngine_Component_GetComponents<type> -> type[] to variable =
+    //type[] to "variable ="
+    //UnityEngine_Component_GetComponents<type>
+    //UnityEngine_Component_GetComponentsInChildren<type>
+    //UnityEngine_Component_GetComponentsInParent<type>
 
-    //Method_UnityEngine_Component_GetComponentInChildren<type> -> type to variable =
-    //Method_UnityEngine_Component_GetComponentsInChildren<type> = type[] to variable =
+    //type to output parameter
+    //UnityEngine_Component_TryGetComponent<type>
 
-    //Method_UnityEngine_Component_GetComponentInParent<type> - > type to variable =
-    //Method_UnityEngine_Component_GetComponentsInParent<type> - > type[] to variable =
+    //todo UnityEngine_GameObject.
+    private static void tryComponentRetype(HashMap<String, VariableType> variables, String line, HashMap<String, StructData> types) {
+        VariableType variableType;
+        String variableName;
+        boolean array = false;
+        int pos;
 
-    //Method_UnityEngine_Component_TryGetComponent<type> - type to output parameter
-    //Method_GameObjectExtensions_GetOrAddComponent<type> - type to variable =
-    private static void tryComponentRetype() {
+        //Moving the pos before component type
+        int index = line.indexOf("Method_UnityEngine_Component_");
+        if (index != -1) {
+            pos = index + 29;
+            if (textAfterEquals(line, pos, "GetComponent")) {
+                //get variable name
+                int endPos = skipUntilReverse(line, index, ' ');
+                if (endPos != -1) { //normal value assignment
+                    if (textBeforeEquals(line, endPos - 1, " =")) endPos -= 2;
+                    else return;
 
+                    int startPos = skipUntilReverse(line, endPos - 1, ' ', ',', '(');
+                    if (startPos == -1) startPos = 0;
+                    variableName = line.substring(startPos, endPos);
+                }
+                else if (line.charAt(pos + 13) == 's') { //array version with a list passed as an argument
+                    endPos = skipUntilReverse(line, index - 2, ',', '*', '&');
+                    if (endPos != -1) variableName = line.substring(endPos + 1, index - 1);
+                    else return;
+                }
+                else return;
+
+                variableType = variables.get(variableName);
+                if (variableType == null || (!variableType.changed && !targetedTypes.contains(variableType.types.iterator().next()))) return;
+
+                //move pos
+                pos += 12;
+                if (line.charAt(pos) == 's') { //GetComponents...
+                    pos += 1;
+                    array = true;
+                }
+                if (line.charAt(pos) != '<') {
+                    if (line.charAt(pos) == 'I') {
+                        if (line.charAt(pos + 2) == 'P') pos += 8; //GetComponent(s)InParent
+                        else if (line.charAt(pos + 2) == 'C') pos += 10; //GetComponent(s)InChildren
+                    }
+                }
+            }
+            else if (textAfterEquals(line, pos, "TryGetComponent")) {
+                //get variable name
+                int endPos = skipUntilReverse(line, index - 2, ',', '*', '&');
+                if (endPos != -1) variableName = line.substring(endPos + 1, index - 1);
+                else return;
+
+                variableType = variables.get(variableName);
+                if (variableType == null || (!variableType.changed && !targetedTypes.contains(variableType.types.iterator().next()))) return;
+                //move pos
+                pos += 15;
+            }
+            else return;
+        }
+        else {
+            index = line.indexOf("Method_GameObjectExtensions_GetOrAddComponent");
+            if (index != -1) {
+                //get variable name
+                int endPos = skipUntilReverse(line, index, ' ');
+                if (endPos != -1) {
+                    if (textBeforeEquals(line, endPos - 1, " =")) endPos -= 2;
+                    else return;
+
+                    int startPos = skipUntilReverse(line, endPos - 1, ' ', ',', '(');
+                    if (startPos == -1) startPos = 0;
+                    variableName = line.substring(startPos, endPos);
+                }
+                else return;
+
+                variableType = variables.get(variableName);
+                if (variableType == null || (!variableType.changed && !targetedTypes.contains(variableType.types.iterator().next()))) return;
+                //move pos
+                pos = index + 45;
+            }
+            else return;
+        }
+
+        if (line.charAt(pos) == '<') {
+            int endPos = skipUntilMatching(line, pos + 1, '<', '>');
+            String newType = tryExpandType(types, line.substring(pos + 1, endPos)) + (array ? "[] *" : "_o *");
+            variableType.tryAddType(newType);
+        }
+    }
+
+    private static String tryExpandType(HashMap<String, StructData> types, String type) {
+        List<Map.Entry<String, StructData>> matches = new ArrayList<>();
+        type = '_' + type;
+
+        for (Map.Entry<String, StructData> entry : types.entrySet()) {
+            if (entry.getKey().endsWith(type)) matches.add(entry);
+        }
+
+        if (matches.isEmpty()) return type;
+        if (matches.size() == 1) return matches.getFirst().getKey();
+
+        for (Map.Entry<String, StructData> match : matches) {
+            StructData currentType = match.getValue();
+
+            loop:
+            while (currentType != null) {
+                for (TypeField field : currentType.fields) {
+                    if (field.name.equals("super")) {
+                        String typeName = field.type.substring(0, field.type.length() - 7);
+                        if (typeName.equals("UnityEngine_Component")) return match.getKey();
+
+                        currentType = types.get(typeName);
+                        continue loop;
+                    }
+                }
+                currentType = null;
+            }
+        }
+        return type;
     }
 
     static class StructData {
@@ -466,6 +569,18 @@ public class RetypeAnalyser {
             this.types = new HashSet<>();
             this.types.add(type);
             this.changed = false;
+        }
+
+        public void tryAddType(String newType) {
+            boolean shouldAdd = true;
+            for (String type : types) {
+                if (Pattern.compile(Pattern.quote(newType), Pattern.CASE_INSENSITIVE).matcher(type).find()) shouldAdd = false;
+            }
+            if (shouldAdd) {
+                if (!changed) types.clear();
+                types.add(newType);
+                changed = true;
+            }
         }
     }
 }

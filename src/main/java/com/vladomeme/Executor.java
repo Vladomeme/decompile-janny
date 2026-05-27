@@ -1601,18 +1601,7 @@ public class Executor {
                         builder.append('(');
 
                         if (line.charAt(argsPos) == ',') { //constructor args
-                            pos = argsPos + 1;
-                            int braceCount = 0;
-                            while (pos != line.length()) {
-                                char c = line.charAt(pos);
-
-                                if (c == '(') braceCount++;
-                                else if (c == ')') {
-                                    if (braceCount == 0) break;
-                                    braceCount--;
-                                }
-                                pos++;
-                            }
+                            pos = skipUntilMatching(line, argsPos + 1, '(', ')');
                             builder.append(line, argsPos + 1, pos);
                         }
                         builder.append(");");
@@ -1636,18 +1625,7 @@ public class Executor {
                         builder.append('(');
 
                         if (line.charAt(argsPos) == ',') { //constructor args
-                            pos = argsPos + 1;
-                            int braceCount = 0;
-                            while (pos != line.length()) {
-                                char c = line.charAt(pos);
-
-                                if (c == '(') braceCount++;
-                                else if (c == ')') {
-                                    if (braceCount == 0) break;
-                                    braceCount--;
-                                }
-                                pos++;
-                            }
+                            pos = skipUntilMatching(line, argsPos + 1, '(', ')');
                             builder.append(line, argsPos + 1, pos);
                         }
                         builder.append(");");
