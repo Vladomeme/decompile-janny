@@ -144,7 +144,7 @@ public class UI extends JFrame {
         options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::removeMethodInitialization,
                 "Remove method initialization blocks", OptionDescriptions.removeMethodInitialization));
 
-        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, null, Executor::removeStaticInitialization,
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeStaticInitialization$prepare, Executor::removeStaticInitialization,
                 "Remove static initialization blocks", OptionDescriptions.removeStaticInitialization));
 
         options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::simplifyProcedureInterruptions$prepare, Executor::simplifyProcedureInterruptions,

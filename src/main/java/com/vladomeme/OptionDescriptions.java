@@ -51,6 +51,14 @@ public class OptionDescriptions {
                 if (*&(UnityEngine_Object_TypeInfo->_2).field_0x1c == 0) {
                     il2cpp_runtime_class_init();
                 }
+            
+                if ((*(lVar2 + 309) & 1) == 0) {
+                    lVar2 = FUN_180288450(lVar2);
+                }
+            
+                if (((pIVar3->_2).field_0x6d & 1) == 0) {
+                    pIVar3 = FUN_180288450(pIVar3);
+                }
             """;
 
     public static final String simplifyProcedureInterruptions = """

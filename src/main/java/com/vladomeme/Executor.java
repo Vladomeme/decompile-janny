@@ -25,6 +25,7 @@ public class Executor {
     static boolean skipArrayReset = false;
 
     static int TAB_LENGTH;
+    static String initializationFunction;
     static String interruptionFunction;
     static String arrayInitFunction;
     static float methodInfoThreshold;
@@ -357,9 +358,51 @@ public class Executor {
         }
     }
 
+    static void removeStaticInitialization$prepare() {
+        initializationFunction = JOptionPane.showInputDialog(null,
+                """
+                        Enter the name of a static initialization function.
+                        It's usually called in a conditional block after a bitfield check
+                        "+ 309) & 1) == 0", formatted as FUN_*********.
+                        
+                        Leave empty for auto-detection.
+                        """);
+        if (initializationFunction.isEmpty()) { //auto-detect
+            System.out.print("Finding static initialization function name...    ");
+
+            Map<String, Integer> map = new HashMap<>();
+            String previous = null;
+
+            for (String line : lines) {
+                ProgressTracker.progress();
+                if (line.isEmpty()) continue;
+
+                if (previous != null) {
+                    previous = null;
+
+                    int pos = line.indexOf("FUN_");
+                    if (pos != -1 && pos + 13 <= line.length())
+                        map.merge(line.substring(pos, pos + 13), 1, Integer::sum);
+                }
+
+                if (line.contains("+ 309) & 1) == 0") || line.contains("field_0x6d & 1) == 0")) previous = line;
+            }
+            initializationFunction = map.entrySet().stream()
+                    .max(Comparator.comparingInt(Map.Entry::getValue))
+                    .map(Map.Entry::getKey).orElse("");
+            if (initializationFunction.isEmpty()) System.out.println("Failed to auto-detect function name");
+            else System.out.println("Selected function name: " + initializationFunction);
+
+        }
+        else if (initializationFunction.length() < 13 || !initializationFunction.substring(0, 13).matches("FUN_[0-9a-z]{9}")) {
+            JOptionPane.showMessageDialog(null, "Invalid function name, procedure will be skipped.", "Warning", JOptionPane.WARNING_MESSAGE);
+            initializationFunction = "";
+        }
+    }
+
     //todo fix double init edge case -> PrepareLocationDropdown
     static void removeStaticInitialization() {
-        System.out.print("Removing static initialization blocks...    ");
+        System.out.print("Removing static initialization blocks (step 1)...    ");
 
         int i = 2;
         boolean afterRemoval = false;
@@ -369,8 +412,8 @@ public class Executor {
             ProgressTracker.progress();
 
             if (lines[i].isEmpty()) {
-                if (!afterRemoval) appendWithNewLine(lines[i - 2]);
-                afterRemoval = false;
+                if (afterRemoval) afterRemoval = false;
+                else appendWithNewLine(lines[i - 2]);
                 i++;
                 continue;
             }
@@ -404,13 +447,50 @@ public class Executor {
                     }
                 }
             }
-            if (!afterRemoval) appendWithNewLine(lines[i - 2]);
-            afterRemoval = false;
+            if (afterRemoval) afterRemoval = false;
+            else appendWithNewLine(lines[i - 2]);
             i++;
         }
         appendWithNewLine(lines[i - 1]);
         appendWithNewLine(lines[i - 2]);
         ProgressTracker.end();
+        resetLineArray();
+        ProgressTracker.reset(lines.length);
+
+        System.out.print("Removing static initialization blocks (step 2)...    ");
+
+        if (initializationFunction.isEmpty()) {
+            skipArrayReset = true;
+            return;
+        }
+
+        i = 1;
+        afterRemoval = false;
+
+        while (i < lines.length) {
+            ProgressTracker.progress();
+
+            if (lines[i].isEmpty()) {
+                if (afterRemoval) afterRemoval = false;
+                else appendWithNewLine(lines[i - 1]);
+                i++;
+                continue;
+            }
+            if (lines[i].contains(initializationFunction)) {
+                if (!lines[i - 1].isEmpty() && !lines[i + 1].isEmpty()
+                        && lines[i - 1].charAt(lines[i - 1].length() - 1) == '{'
+                        && lines[i + 1].charAt(lines[i + 1].length() - 1) == '}') {
+                    i += 2;
+                    afterRemoval = true;
+                    continue;
+                }
+            }
+            if (afterRemoval) afterRemoval = false;
+            else appendWithNewLine(lines[i - 1]);
+            i++;
+        }
+        ProgressTracker.end();
+        if (i == lines.length) appendWithNewLine(lines[i - 1]);
     }
 
     //todo improve to check function signature
@@ -1318,7 +1398,7 @@ public class Executor {
 
     //todo overloaded methods? use argument counts for relatively cheap distinction
     static void removeMethodInfoArgument() {
-        System.out.print("Removing useless MethodInfo arguments (part 1)...    ");
+        System.out.print("Removing useless MethodInfo arguments (step 1)...    ");
 
         if (methodInfoThreshold == -67) {
             skipArrayReset = true;
@@ -1351,7 +1431,7 @@ public class Executor {
         }
         ProgressTracker.reset(lines.length);
 
-        System.out.print("Removing useless MethodInfo arguments (part 2)...    ");
+        System.out.print("Removing useless MethodInfo arguments (step 2)...    ");
 
         // COUNTING METHOD USES AND REMOVING METHODS THAT HAVE NON-NULL MethodInfo ARGUMENTS USED FROM LIST //
         for (String line : lines) {
@@ -1398,7 +1478,7 @@ public class Executor {
         //remove all methods that exceed the threshold
         methods.entrySet().removeIf(entry -> entry.getValue()[0] != 0 && (float) entry.getValue()[1] / entry.getValue()[0] > methodInfoThreshold);
 
-        System.out.print("Removing useless MethodInfo arguments (part 3)...    ");
+        System.out.print("Removing useless MethodInfo arguments (step 3)...    ");
 
         // REMOVING ARGUMENTS FROM LEFTOVER METHODS & THEIR USES //
         for (String line : lines) {

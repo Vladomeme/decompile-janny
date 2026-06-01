@@ -178,7 +178,6 @@ public class RetypeAnalyser {
                     for (TypeField field : struct.fields) struct.size += field.size;
 
                     changed = true;
-                    System.out.println("changed");
                 }
             }
         }
