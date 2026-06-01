@@ -892,6 +892,7 @@ public class Executor {
         return lines;
     }
 
+    //todo if ((values->max_length < 2) || (values->m_Items[1] = pSVar2, values->max_length < 3)) return;
     static void removeArrayBoundChecks() {
         System.out.print("Removing array bound checks...    ");
 
@@ -913,33 +914,41 @@ public class Executor {
                     if (blockEnds.isEmpty()) inBlock = false;
                     continue;
                 }
-                if (line.charAt(line.length() - 1) == '{' && line.contains("max_length")) {
-                    headerMatcher.reset(line);
-                    //nested block header
-                    if (headerMatcher.find()) {
-                        blockEnds.push(headerMatcher.group(1).length() + 1);
-                        continue;
+                if (line.contains("max_length")) {
+                    if (line.charAt(line.length() - 1) == '{') {
+                        headerMatcher.reset(line);
+                        //nested block header
+                        if (headerMatcher.find()) {
+                            blockEnds.push(headerMatcher.group(1).length() + 1);
+                            continue;
+                        }
                     }
-                    //inline check
-                    inlineMatcher.reset(line);
-                    if (inlineMatcher.find()) continue;
+                    else {
+                        //inline check
+                        inlineMatcher.reset(line);
+                        if (inlineMatcher.find()) continue;
+                    }
                 }
                 //normal line
                 if (line.charAt(0) == ' ') appendWithNewLine(line.substring(TAB_LENGTH * blockEnds.size()));
                 else appendWithNewLine(line);
             }
             else {
-                if (line.charAt(line.length() - 1) == '{' && line.contains("max_length")) {
-                    //check header
-                    headerMatcher.reset(line);
-                    if (headerMatcher.find()) {
-                        inBlock = true;
-                        blockEnds.push(headerMatcher.group(1).length() + 1);
-                        continue;
+                if (line.contains("max_length")) {
+                    if (line.charAt(line.length() - 1) == '{') {
+                        //check header
+                        headerMatcher.reset(line);
+                        if (headerMatcher.find()) {
+                            inBlock = true;
+                            blockEnds.push(headerMatcher.group(1).length() + 1);
+                            continue;
+                        }
                     }
-                    //normal line
-                    inlineMatcher.reset(line);
-                    if (inlineMatcher.find()) continue;
+                    else {
+                        //inline check
+                        inlineMatcher.reset(line);
+                        if (inlineMatcher.find()) continue;
+                    }
                 }
                 appendWithNewLine(line);
             }
