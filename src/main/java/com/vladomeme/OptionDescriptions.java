@@ -188,6 +188,12 @@ public class OptionDescriptions {
             
             """;
 
+    public static final String removeTypeChecks = """
+            Removes type checks before operations with arrays and reference types.
+            
+            
+            """;
+
     public static final String removeObjectAllocations = """
             Removes function calls for object memory allocations, replacing
             them directly with constructors, which are usually located right

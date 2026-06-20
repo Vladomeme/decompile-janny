@@ -29,6 +29,7 @@ public class Executor {
     static String interruptionFunction;
     static String arrayInitFunction;
     static float methodInfoThreshold;
+    static String typeCheckFunction;
     static String objectInitFunction;
 
     static void execute(List<ExecutionOption> options, Path path, boolean saveToCopy) {
@@ -39,19 +40,31 @@ public class Executor {
         getIndentation();
         if (TAB_LENGTH <= 0) return;
 
-        for (ExecutionOption option : options) {
-            if (option.enabled && option.preparation != null) {
-                option.preparation.run();
-                ProgressTracker.reset(lines.length);
+        try {
+            for (ExecutionOption option : options) {
+                if (option.enabled && option.preparation != null) {
+                    option.preparation.run();
+                    ProgressTracker.reset(lines.length);
+                }
+            }
+
+            for (ExecutionOption option : options) {
+                if (option.enabled && option.execution != null) {
+                    option.execution.run();
+                    resetLineArray();
+                    ProgressTracker.reset(lines.length);
+                }
             }
         }
+        catch (Exception e) {
+            int index = resultBuilder.lastIndexOf("\n", Math.max(resultBuilder.length() - 300, 0));
+            if (index == -1) index = 0;
+            else index++;
+            System.out.println();
+            System.out.println("Last lines:");
+            System.out.println(resultBuilder.substring(index));
 
-        for (ExecutionOption option : options) {
-            if (option.enabled && option.execution != null) {
-                option.execution.run();
-                resetLineArray();
-                ProgressTracker.reset(lines.length);
-            }
+            throw e;
         }
 
         try {
@@ -1559,6 +1572,115 @@ public class Executor {
         }
     }
 
+    static void removeTypeChecks$prepare() {
+        typeCheckFunction = JOptionPane.showInputDialog(null,
+                """
+                        Enter the name of the type checking function.
+                        It can be found by looking at the usage of Il2cpp field
+                        'element_data' as a second parameter.
+                        
+                        Leave empty for auto-detection.
+                        """);
+        if (typeCheckFunction.isEmpty()) { //auto-detect
+            System.out.print("Finding type checker function name...    ");
+
+            Map<String, Integer> map = new HashMap<>();
+            Matcher matcher = Pattern.compile("((?:thunk_)?FUN_.........)\\([^(),]+?,[^(),]*element_class\\)").matcher("");
+
+            for (String line : lines) {
+                ProgressTracker.progress();
+
+                if (line.isEmpty()) continue;
+
+                if (line.indexOf("FUN", TAB_LENGTH + 4) != -1 && line.indexOf("element_class", TAB_LENGTH + 30) != -1) {
+                    matcher.reset(line);
+                    if (matcher.find()) {
+                        map.merge(matcher.group(1), 1, Integer::sum);
+                    }
+                }
+            }
+            typeCheckFunction = map.entrySet().stream()
+                    .max(Comparator.comparingInt(Map.Entry::getValue))
+                    .map(Map.Entry::getKey).orElse("");
+            if (typeCheckFunction.isEmpty()) System.out.println("Failed to auto-detect function name");
+            else System.out.println("Selected function name: " + typeCheckFunction);
+        }
+        else if (typeCheckFunction.length() < 13 || !typeCheckFunction.substring(0, typeCheckFunction.charAt(0) == 't' ? 19 : 13).matches("(?:thunk_)?FUN_[0-9a-z]{9}")) {
+            JOptionPane.showMessageDialog(null, "Invalid function name, procedure will be skipped.", "Warning", JOptionPane.WARNING_MESSAGE);
+            typeCheckFunction = "";
+        }
+    }
+
+    static void removeTypeChecks() {
+        System.out.print("Removing type checks...    ");
+
+        if (typeCheckFunction.isEmpty()) {
+            skipArrayReset = true;
+            return;
+        }
+
+        int i = 0;
+        while (i < lines.length) {
+            ProgressTracker.progress();
+
+            if (lines[i].isEmpty()) {
+                appendEmpty();
+                i++;
+                continue;
+            }
+
+            while (lines[i].contains(typeCheckFunction)) {
+                int pos = skipWhile(lines[i], 0, ' ');
+                //inline check
+                if (textAfterEquals(lines[i], pos, "if ((") && lines[i].endsWith("== 0)) {")) {
+                    if (lines[i + 1].contains("FUN")) {
+                        if (lines[i + 2].contains("FUN") && !lines[i + 3].isEmpty() && lines[i + 3].charAt(lines[i + 3].length() - 1) == '}') {//two calls
+                            i += 4;
+                            continue;
+                        }
+                        else if (!lines[i + 2].isEmpty() && lines[i + 2].charAt(lines[i + 2].length() - 1) == '}') { //one call
+                            i += 3;
+                            continue;
+                        }
+                    }
+                }
+                else { //split block check
+                    String next = lines[i + 1];
+                    pos = skipWhile(next, 0, ' ');
+                    int offset = 0;
+                    boolean checked = false;
+
+                    if (!textAfterEquals(next, pos, "if (")) {
+                        next = lines[i + 2];
+                        pos = skipWhile(next, 0, ' ');
+                        offset = 1;
+                    }
+                    else checked = true;
+
+                    if (checked || (textAfterEquals(next, pos, "if (") && next.endsWith("== 0) {"))) {
+                        if (lines[i + 2 + offset].contains("FUN")) {
+                            if (lines[i + 3 + offset].contains("FUN") && !lines[i + 4].isEmpty()
+                                    && lines[i + 4 + offset].charAt(lines[i + 4 + offset].length() - 1) == '}') { //two calls
+                                if (offset == 1) appendWithNewLine(lines[i + 1]);
+                                i += 5 + offset;
+                                continue;
+                            }
+                            else if (!lines[i + 3].isEmpty() && lines[i + 3 + offset].charAt(lines[i + 3 + offset].length() - 1) == '}') { //one call
+                                if (offset == 1) appendWithNewLine(lines[i + 1]);
+                                i += 4 + offset;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            appendWithNewLine(lines[i]);
+            i++;
+        }
+        ProgressTracker.end();
+    }
+
     static void removeObjectAllocations$prepare() {
         objectInitFunction = JOptionPane.showInputDialog(null,
                 """
@@ -1578,7 +1700,6 @@ public class Executor {
                 ProgressTracker.progress();
 
                 if (!line.isEmpty()) {
-                    //a cheap (?) line skip to avoid using regex?
                     if (line.indexOf("FUN", TAB_LENGTH + 4) != -1 && line.indexOf("TypeInfo", TAB_LENGTH + 17) != -1) {
                         matcher.reset(line);
                         if (matcher.find()) {
@@ -1781,6 +1902,7 @@ public class Executor {
         else return null;
     }
 
+    //todo move to retyper
     static void correctLocalBooleans() {
         System.out.print("Correcting local boolean variables...    ");
 

@@ -168,6 +168,9 @@ public class UI extends JFrame {
         options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeMethodInfoArgument$prepare, Executor::removeMethodInfoArgument,
                 "Remove useless MethodInfo arguments", OptionDescriptions.removeMethodInfoArguments));
 
+        options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeTypeChecks$prepare, Executor::removeTypeChecks,
+                "Remove type checks", OptionDescriptions.removeTypeChecks));
+
         options.add(new ExecutionOption(optionListPanel, descHeader, descArea, Executor::removeObjectAllocations$prepare, Executor::removeObjectAllocations,
                 "Remove object allocations", OptionDescriptions.removeObjectAllocations));
 

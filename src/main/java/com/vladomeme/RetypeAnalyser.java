@@ -387,6 +387,8 @@ public class RetypeAnalyser {
         //todo allocation removal not used case
     }
 
+    //todo Method_SingletonScriptableObject<
+    //todo Method_SingletonMonoBehaviour<
     private static void trySingletonRetype(HashMap<String, VariableType> variables, String line) {
         int index = line.indexOf("SingletonLoadableMonoBehaviour<");
         if (index != -1) {
