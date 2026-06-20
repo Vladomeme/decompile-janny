@@ -413,7 +413,6 @@ public class Executor {
         }
     }
 
-    //todo fix double init edge case -> PrepareLocationDropdown
     static void removeStaticInitialization() {
         System.out.print("Removing static initialization blocks (step 1)...    ");
 
@@ -440,7 +439,7 @@ public class Executor {
                         String line = lines[pos];
                         if (!line.isEmpty() && line.charAt(line.length() - 1) == '}') {
                             i = pos + 2;
-                            appendWithNewLine(previous2);
+                            if (!afterRemoval) appendWithNewLine(previous2);
                             afterRemoval = true;
                             continue loop;
                         }
@@ -1585,7 +1584,7 @@ public class Executor {
             System.out.print("Finding type checker function name...    ");
 
             Map<String, Integer> map = new HashMap<>();
-            Matcher matcher = Pattern.compile("((?:thunk_)?FUN_.........)\\([^(),]+?,[^(),]*element_class\\)").matcher("");
+            Matcher matcher = Pattern.compile("((?:thunk_)?FUN_.........)\\([^(),]+?,[^;,]*element_class\\);").matcher("");
 
             for (String line : lines) {
                 ProgressTracker.progress();
@@ -1632,7 +1631,7 @@ public class Executor {
             while (lines[i].contains(typeCheckFunction)) {
                 int pos = skipWhile(lines[i], 0, ' ');
                 //inline check
-                if (textAfterEquals(lines[i], pos, "if ((") && lines[i].endsWith("== 0)) {")) {
+                if (textAfterEquals(lines[i], pos, "if ((") && (lines[i].endsWith("== 0)) {") || lines[i].endsWith("== NULL)) {"))) {
                     if (lines[i + 1].contains("FUN")) {
                         if (lines[i + 2].contains("FUN") && !lines[i + 3].isEmpty() && lines[i + 3].charAt(lines[i + 3].length() - 1) == '}') {//two calls
                             i += 4;
@@ -1657,7 +1656,7 @@ public class Executor {
                     }
                     else checked = true;
 
-                    if (checked || (textAfterEquals(next, pos, "if (") && next.endsWith("== 0) {"))) {
+                    if (checked || (textAfterEquals(next, pos, "if (") && (next.endsWith("== 0) {") || next.endsWith("== NULL) {")))) {
                         if (lines[i + 2 + offset].contains("FUN")) {
                             if (lines[i + 3 + offset].contains("FUN") && !lines[i + 4].isEmpty()
                                     && lines[i + 4 + offset].charAt(lines[i + 4 + offset].length() - 1) == '}') { //two calls
